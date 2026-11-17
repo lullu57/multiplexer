@@ -108,6 +108,17 @@ bun exact.mjs test ios
 bun exact.mjs contract build app.contract --json --errors-only
 ```
 
+Cloud simulator (Expo Simulators, project `@ramimaalouf/mux` in `apps/multiplexer/cloudsim.json`):
+
+```sh
+bun exact.mjs cloud              # the ios build, installed and opened on a cloud iPhone; prints the browser preview
+bun exact.mjs cloud exec bunx agent-device@latest snapshot -i   # drive it (agent ios / test ios reach only a local simulator)
+bun exact.mjs cloud shot .exact/cloud.png
+bun exact.mjs cloud stop         # always, when done: sessions are billed
+```
+
+The cloud run builds the same app as `ios --run`, so it does not include remote push. It stops after 15 idle minutes.
+
 - `prefer` takes a full key: `"prefer prefers-color-scheme dark"`.
 - **Use native tests:** `test ios` / `verify ios`, and `test mac` for Mac changes.
   The web has no Matrix SDK, so web verification cannot validate chat or sign-in.
