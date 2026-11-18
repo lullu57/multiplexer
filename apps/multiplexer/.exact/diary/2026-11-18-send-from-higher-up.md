@@ -19,6 +19,13 @@ task: when a message is sent while a chat is scrolled up, go to the chat's end f
   scroll event keeps (`away`) from an every-frame task, with a time limit. what would help: a
   scroll-end event, or `scrollIntoView(..., then=<action>)`.
 
+- an action read a state that a called action had just assigned, and got the value from before
+  the action. so a branch written as "if the flight is held" never ran, and another path did the
+  work; the drive looked right. `contract build --errors-only` (the command the project runs after
+  each edit) hides the `analyze-read-after-assign` warning that names this exactly; `verify` showed
+  it an hour later. what would help: `--errors-only` still prints this warning class, since it is
+  a wrong-result bug, not style.
+
 ### Lean in
 - `screenshot <png> over 1800 every 150 window` showed the order of the scroll and the flight
   without a screen recording.
