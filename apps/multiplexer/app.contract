@@ -4,7 +4,7 @@ use ClipboardItem from "@exact/clipboard"
 use notificationclick, requestNotificationPermission, notificationStatus, NotificationStatus from "@exact/notifications"
 use EmptyState from "exact:content"
 use Appearance, AccentBadge from "./appearance.contract"
-use Balloon, Face from "./bubble.contract"
+use Balloon, Face, Quote, ComposerNote from "./bubble.contract"
 use ComposerRow, Attachment, chosenOf, isPicture, AddButton, AddPanel, Tray, FileBubble, UploadRing, sizeText, fileDetail from "./attach.contract"
 use BottomBar, PinnedGrid, PinnedChat, TitleMenu, InboxHeader, ChooseMark, SelectTitle, SelectBar, emptyTitle, emptyMessage, listTitle, listEmptyTitle, listEmptyMessage, deleteMessage, deleteChatsTitle, deleteChatsMessage from "./inbox.contract"
 use NetworkBadge, NetworkBadges, networkName from "./network.contract"
@@ -164,6 +164,8 @@ shape Message
   hasReply: bool
   replyName: string
   replyBody: string
+  // the quoted message's event: a tap on the quote goes to it.
+  replyEvent: string
   reactions: Reaction[]
   isFile: bool
   fileName: string
@@ -878,6 +880,14 @@ component Multiplexer
       editing = ""
       revealing = id
       focus("composer")
+  // a tap on a reply's quote: the chat pages back to the quoted message and marks it a moment, as
+  // a found message (search-members.contract's jump). An event not known yet does nothing.
+  action openQuoted(event: string)
+    if event != ""
+      jumpRoom = openRoom
+      jumpEvent = event
+      jumpedTo = ""
+      jumpMissed = ""
   // Send Later's text now waits on the server: the composer empties, its reply too. A root action,
   // as a members file cannot name Composer (send-later-members.contract calls it).
   action clearComposer
@@ -1673,13 +1683,7 @@ component Multiplexer
                                   background-color="-exact-fill" color="-exact-secondary-label" testId=`deleted-${m.id}`
                               else if m.balloon or m.bigEmoji
                                 if m.hasReply
-                                  column padding="2px 0 2px 10px" margin="0 6px 2px" border-left="2px solid -exact-separator" max-width="100%"
-                                    testId=`quote-${m.id}`
-                                    // the name comes a moment after the quote when its sender's profile is not loaded yet.
-                                    if m.replyName != ""
-                                      text m.replyName font="-exact-caption1" font-weight=600 color="-exact-secondary-label" line-clamp=1
-                                        testId=`quote-name-${m.id}`
-                                    text m.replyBody font="-exact-footnote" color="-exact-secondary-label" line-clamp=2
+                                  Quote(name=m.replyName, body=m.replyBody, press=openQuoted(m.replyEvent), message=m.id)
                                 // a message that is only a link with its card: the whole card opens the link, and the
                                 // same node holds the long press and the swipe (SwipeReply, as a photo), since a box
                                 // takes no tap and a press inside a swipe keeps the touch.
@@ -1828,19 +1832,11 @@ component Multiplexer
                     text "Retry"
               // an edit's bar takes the reply bar's place, in its look; the reply waits with the draft.
               if editing != ""
-                row align-items="center" gap=8 margin="6px 12px 0" padding-left=12 border-left="2px solid AccentColor" testId="edit-bar"
-                  column flex=1 min-width=0
-                    text "Editing" font="-exact-caption1" font-weight=600 color="AccentColor"
-                    text editOld font="-exact-footnote" color="-exact-secondary-label" line-clamp=2
-                  button press=cancelEdit aria-label="Cancel Editing" testId="cancel-edit"
-                    image "symbol:close"
+                ComposerNote(title="Editing", body=editOld, cancel=cancelEdit, cancelLabel="Cancel Editing", locked=false,
+                  identifier="edit-bar", cancelIdentifier="cancel-edit")
               else if composer.replyTo != ""
-                row align-items="center" gap=8 margin="6px 12px 0" padding-left=12 border-left="2px solid AccentColor" testId="reply-bar"
-                  column flex=1 min-width=0
-                    text `Replying to ${composer.replyName}` font="-exact-caption1" font-weight=600 color="AccentColor"
-                    text composer.replyBody font="-exact-footnote" color="-exact-secondary-label" line-clamp=2
-                  button press=cancelReply disabled=(not composerReady) aria-label="Cancel Reply" testId="cancel-reply"
-                    image "symbol:close"
+                ComposerNote(title=`Replying to ${composer.replyName}`, body=composer.replyBody, cancel=cancelReply, cancelLabel="Cancel Reply",
+                  locked=(not composerReady), identifier="reply-bar", cancelIdentifier="cancel-reply")
               // "+" on the left, the field, and the voice button or Send on the right, each its own glass,
               // as Beeper has them. While recording or as a draft: X replaces "+", Stop or Send replaces
               // voice; the capsule holds only the waveform. The photos and files picked sit above the text.

@@ -58,3 +58,51 @@ component Face
         image picture width="100%" height="100%" object-fit="cover" aria-label=""
       else
         text initials font-size=(size * 0.4) font-weight=600 color="-exact-secondary-label"
+
+// what a reply answers, above its bubble: who wrote it and up to two lines of it, on a soft card
+// with the accent's bar. A tap goes to that message. A word longer than the line (a link) breaks
+// where it must, so the ellipsis ends it inside the card.
+component Quote
+  props
+    name: string
+    body: string
+    press: action
+    message: string
+  view
+    button appearance="none" press=press testId=`quote-${message}` aria-label=(name != "" ? `Reply to ${name}: ${body}` : `Reply: ${body}`)
+      display="flex" flex-direction="row" align-items="stretch" gap=8 max-width="100%" min-width=0 box-sizing="border-box" text-align="start"
+      padding="6px 12px 6px 8px" margin-bottom=2 border-radius=14 background-color="-exact-quaternary-fill"
+      view width=3 border-radius=1.5 background-color="AccentColor" flex-shrink=0 aria-hidden=true
+      column min-width=0 gap=1
+        // the name comes a moment after the quote when its sender's profile is not loaded yet.
+        if name != ""
+          text name font="-exact-caption1" font-weight=600 color="AccentColor" line-clamp=1 overflow-wrap="break-word" min-width=0 max-width="100%"
+            testId=`quote-name-${message}`
+        text body font="-exact-footnote" color="-exact-secondary-label" line-clamp=2 overflow-wrap="break-word" min-width=0 max-width="100%"
+
+// the bar above the composer while it answers or edits a message: what it does and to whom, one
+// line of that message, and a round button that ends it. The line cuts with an ellipsis, a long
+// link too.
+component ComposerNote
+  props
+    title: string
+    body: string
+    cancel: action
+    cancelLabel: string
+    locked: bool
+    identifier: string
+    cancelIdentifier: string
+  view
+    row align-items="center" gap=10 margin="6px 12px 0" padding="6px 2px 6px 10px" border-radius=18 backgroundMaterial="thin"
+      testId=identifier
+      // the bar is as tall as the two lines beside it, at every text size.
+      view width=3 align-self="stretch" margin="3px 0" border-radius=1.5 background-color="AccentColor" flex-shrink=0 aria-hidden=true
+      column flex=1 min-width=0 gap=1
+        // two lines at the largest text sizes keep the name in view.
+        text title font="-exact-caption1" font-weight=600 color="AccentColor" line-clamp=2 overflow-wrap="break-word" min-width=0 max-width="100%"
+        text body font="-exact-footnote" color="-exact-secondary-label" line-clamp=1 overflow-wrap="break-word" min-width=0 max-width="100%"
+      button appearance="none" press=cancel disabled=locked aria-label=cancelLabel testId=cancelIdentifier
+        display="flex" align-items="center" justify-content="center" min-width=44 min-height=44 flex-shrink=0
+        view width=24 height=24 border-radius=12 background-color="-exact-tertiary-fill" display="flex" align-items="center"
+          justify-content="center"
+          image "symbol:close" font-size="0.65rem" font-weight=700 color="-exact-secondary-label" aria-hidden=true

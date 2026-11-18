@@ -292,7 +292,7 @@ final class Matrix: ExactModule {
                          "isImage": $0.image != nil, "image": thumbnail(account, roomId: roomId, message: $0),
                          "imageWidth": $0.image?.width ?? 0, "imageHeight": $0.image?.height ?? 0,
                          "senderPicture": senderPicture(account, roomId: roomId, message: $0),
-                         "reply": $0.reply.map { ["senderName": $0.senderName, "body": $0.body, "isOwn": $0.isOwn] } ?? [:],
+                         "reply": $0.reply.map { ["senderName": $0.senderName, "body": $0.body, "isOwn": $0.isOwn, "event": $0.eventId] } ?? [:],
                          "reactions": $0.reactions.map { ["key": $0.key, "count": $0.count, "isMine": $0.isMine] },
                          "file": $0.file.map { ["name": $0.name, "size": $0.size, "mimetype": $0.mimetype] } ?? [:],
                          "progress": $0.uploadProgress ?? -1, "isSticker": $0.isSticker,

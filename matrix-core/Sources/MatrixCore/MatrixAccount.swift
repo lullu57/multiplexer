@@ -1230,9 +1230,9 @@ extension QuotedMessage {
         case .ready(let content, let sender, let profile, _, _):
             let name: String
             if case .ready(let shown?, _, _, _, _) = profile { name = shown } else { name = names.name(sender) ?? "" }
-            self.init(senderName: name, body: preview(content) ?? "Message", isOwn: sender == me)
+            self.init(senderName: name, body: preview(content) ?? "Message", isOwn: sender == me, eventId: details.eventId())
         case .unavailable, .pending, .error:
-            self.init(senderName: "", body: "", isOwn: false)
+            self.init(senderName: "", body: "", isOwn: false, eventId: details.eventId())
         }
     }
 }

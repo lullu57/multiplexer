@@ -209,6 +209,8 @@ public struct QuotedMessage: Equatable, Sendable {
     /// Its text, or what it is ("Photo") when it has none.
     public var body: String
     public var isOwn: Bool
+    /// The quoted message's event id, so a tap on the quote can go to it.
+    public var eventId: String
 }
 
 /// A chat's unsent text, kept in the account's store (`MatrixAccount.saveDraft`), so it outlives

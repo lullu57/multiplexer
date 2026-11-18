@@ -131,7 +131,7 @@ type MessagesAnswer = {
     // deleted for everyone (body ""); your own text message, which an edit can change.
     isDeleted: boolean; isEditable: boolean;
     // empty when the message answers none.
-    reply: { senderName?: string; body?: string; isOwn?: boolean };
+    reply: { senderName?: string; body?: string; isOwn?: boolean; event?: string };
     // empty when the message is no file message.
     file: { name?: string; size?: number; mimetype?: string };
     // -1 when nothing uploads.
@@ -399,6 +399,7 @@ function threadOf(answer: MessagesAnswer, roomId: string, isDirect: boolean, roo
         hasReply: (m.reply.body ?? '') !== '',
         replyName: m.reply.isOwn ? 'You' : (m.reply.senderName ?? ''),
         replyBody: m.reply.body ?? '',
+        replyEvent: m.reply.event ?? '',
         isFile: m.file.name !== undefined, fileName: m.file.name ?? '', fileSize: m.file.size ?? 0, progress: m.progress,
         photoWidth: width > 0 && height > 0 ? Math.min(side, (tall * width) / height) : side,
       };
@@ -960,7 +961,7 @@ export const overlay: Overlay = (source, args, answer, writes): ReturnType<Overl
       id: presentationId, presentationId, event: '', sender, senderName: 'You', senderPicture: '',
       body, time, isOwn: true, state: 'sending', isImage: false, image: '', imageWidth: 0, imageHeight: 0,
       waitingForKey: false, isEdited: false, isDeleted: false, isEditable: false,
-      reply: quote ? { senderName: quote.senderName, body: quote.body, isOwn: quote.isOwn } : {},
+      reply: quote ? { senderName: quote.senderName, body: quote.body, isOwn: quote.isOwn, event: quote.event } : {},
       file: {}, progress: -1, reactions: [], isSticker: false, video: {}, poster: '', audio: {}, readers: [],
     };
     const outgoing = threadOf({ ...thread, messages: [raw] }, roomId, isDirect, roomName, utcOffset, network, false).messages[0];
