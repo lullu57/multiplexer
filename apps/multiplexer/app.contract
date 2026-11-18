@@ -390,6 +390,8 @@ component Multiplexer
   state emojiGroup = "frequent"
   // the reader scrolled the chat's newest message out of view.
   state away = false
+  // a message sent with no flight, until the chat has scrolled to its row (endAfterSend).
+  state sentAway = ""
   // the chat list is scrolled from its top: its header softens the chats under it (InboxHeader, R05).
   state roomsScrolled = false
   // the "+" panel is open, in the keyboard's place.
@@ -585,6 +587,8 @@ component Multiplexer
   // the end or the chat from there reads it at once (scrolled, back). Older messages read nothing.
   task markSeen when reading and not away and openUnread > 0 key=`${openRoom}/${lastId}`
     after(1000, readNow)
+  task endAfterSend when sentAway != "" and lastKey == sentAway key=sentAway
+    after(1, toSent)
   task reveal when revealing != "" key=revealing
     after(300, revealNow, wait=idle, max=1000)
   // a draft is kept a moment after typing stops, when its chat is left (follow, back), and when
@@ -797,11 +801,14 @@ component Multiplexer
         let sendId = `send-${shown}-${flightSerial + 1}`
         beginSendFlight(sendId)
         send sent = sendMessage(openRoom, composer.text.trim(), composer.replyTo, sendId, session.userId, shown)
-        if viewport.prefersReducedMotion
-          scrollIntoView("transcript", sendId, offset=1000000, behavior="instant")
-        else
+        // from higher up, the chat scrolls once the sent row is in it, and the flight waits for the
+        // end (send-members.contract's flightHold); at the end, it moves with the flight.
+        let flies = not (viewport.prefersReducedMotion or frame("conversation").unavailable or frame("composer-glass").unavailable)
+        if not flies
+          sentAway = sendId
+        else if not away
           scrollIntoView("transcript", sendId, offset=1000000, behavior="smooth")
-        if viewport.prefersReducedMotion or frame("conversation").unavailable or frame("composer-glass").unavailable
+        if not flies
           composers = withComposer(composers, Composer(composer, text="", replyTo=""))
           unsaved = openRoom
       // Send keeps a keyboard that is up (its button retains the composer's focus), and raises none
@@ -1045,6 +1052,10 @@ component Multiplexer
   // so the transcript then follows the end as the sent message arrives (scrollFollowEnd).
   action toEnd
     scrollIntoView("transcript", lastKey, offset=1000000, behavior="smooth")
+  // a send with no flight (Reduce Motion): the chat goes to the sent row at once, when it is there.
+  action toSent
+    scrollIntoView("transcript", lastKey, offset=1000000, behavior="instant")
+    sentAway = ""
   action revealNow
     let key = match first(thread.messages.filter(m => m.id == revealing)) { case some(m) => m.presentationId, case none => revealing }
     scrollIntoView("transcript", key, block="nearest", behavior="smooth")
