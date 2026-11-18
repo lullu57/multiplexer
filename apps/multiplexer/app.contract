@@ -37,6 +37,16 @@ keyframes sendOut
   to opacity=0
 keyframes logoOut
   to opacity=0
+// a held message's menu, as Messages': the chat blurs in, the bubble's copy lifts, and the reactions
+// and the actions grow out of the bubble's edge with a small overshoot. Leaving is a fade.
+keyframes menuDim
+  from opacity=0
+keyframes menuLift
+  from scale=0.94
+keyframes menuPop
+  from opacity=0 scale=0.4
+keyframes menuOut
+  to opacity=0
 
 shape DesktopState
   unread: number
@@ -517,6 +527,9 @@ component Multiplexer
   // at the largest text sizes the lifted copy is shorter (a photo shrinks to fit), so the menu
   // has room under it; what it still lacks, it scrolls.
   derive heldCap = viewport.accessibilityTextSize ? 200 : 320
+  // the reactions and the actions grow in with a small overshoot; under Reduce Motion they fade.
+  derive menuPopMotion = viewport.prefersReducedMotion ? "menuDim 160ms ease-out both" : "menuPop 360ms cubic-bezier(0.3, 1.35, 0.5, 1) both"
+  derive menuLiftMotion = viewport.prefersReducedMotion ? "none" : "menuLift 360ms cubic-bezier(0.3, 1.35, 0.5, 1) both"
   derive heldScale = min(1, heldCap / max(1, heldHeight))
   derive heldShown = min(heldHeight, heldCap)
   derive heldMenuRoom = max(132, viewport.height - heldShown - 196)
@@ -1957,13 +1970,16 @@ component Multiplexer
             // and its actions under it, as Beeper and Messages show them.
             if held != ""
               column keycapture=menuKey position="absolute" inset=0 z-index=30 testId="message-menu"
+                -exact-exit-animation="menuOut 180ms ease-in both"
                 // the blur reaches past the screen's top and bottom edges too: under the status bar and the home indicator.
                 button press=letGo aria-label="Close" position="absolute" top=-120 left=0 right=0 bottom=-60 backgroundMaterial="thin" testId="close-menu"
+                  animation="menuDim 240ms ease-out both"
                 column position="absolute" left=12 right=12 gap=10 align-items=(heldOwn ? "flex-end" : "flex-start")
                   padding-left=(thread.group and not heldOwn ? 36 : 0)
                   top=max(76, min(heldY - 64, viewport.height - heldShown - min(heldMenuHeight, heldMenuRoom) - 120))
                   // Beeper's six, then "+" for every emoji.
                   row gap=2 padding=6 border-radius=28 backgroundMaterial="glass" testId="quick-reactions"
+                    transform-origin=(heldOwn ? "100% 100%" : "0% 100%") animation=menuPopMotion
                     for k in quickReactions key=k
                       // fixed as Beeper's, a little larger at the largest text sizes, so the bar fits the screen.
                       button appearance="none" press=react(k) min-width=44 min-height=44 border-radius=22 aria-label=k testId=`react-${k}`
@@ -2015,6 +2031,7 @@ component Multiplexer
                   else
                     // a bubble cut at the cap keeps round corners where it is cut.
                     column contextTarget=`message-${held}` contextMagnify=true width=heldWidth max-width="100%" max-height=heldCap overflow="hidden"
+                      animation=menuLiftMotion
                       border-radius=(heldHeight > heldCap ? 20 : 0)
                       padding-bottom=6.65
                       // a link with a card lifts its card, so the bubble keeps its shape under the finger.
@@ -2030,7 +2047,7 @@ component Multiplexer
                           Balloon(appearance=appearance, body=heldBody, outgoing=heldOwn, tail=heldTail, dimmed=false, identifier="held-bubble")
                   // the emoji sheet hides the actions, as Beeper's does: they would show through it.
                   if top(nav).name != "reactions"
-                    MessageActions(maxHeight=heldMenuRoom, canShare=heldCanShare, canForward=heldCanForward, canCopy=heldCanCopy, canEdit=heldCanEdit, canDelete=heldCanDelete,
+                    MessageActions(motion=menuPopMotion, origin=(heldOwn ? "100% 0%" : "0% 0%"), maxHeight=heldMenuRoom, canShare=heldCanShare, canForward=heldCanForward, canCopy=heldCanCopy, canEdit=heldCanEdit, canDelete=heldCanDelete,
                       canBookmark=(heldEvent != ""), bookmarked=heldBookmarked,
                       reply=startReply(held, heldName, heldBody), share=shareHeld, forward=forwardHeld, copy=copyHeld, canTranscribe=heldCanTranscribe, transcribe=transcribeHeld,
                       markUnread=markUnreadOpen, bookmark=toggleBookmarkHeld, edit=startEdit, delete=askDeleteMessage)

@@ -36,6 +36,9 @@ component MenuRow
 // caption; a sticker has neither Share nor Forward. A saved message offers Remove Bookmark.
 component MessageActions
   props
+    // how the menu comes in (an animation), and the corner it grows from: the held bubble's side.
+    motion: string
+    origin: string
     // the room under the held message: past it, the actions scroll (the largest text sizes).
     maxHeight: number
     canShare: bool
@@ -58,7 +61,7 @@ component MessageActions
     delete: action
   view
     scroll width="14.5rem" max-width="100%" max-height=maxHeight padding="6px 0" border-radius=22 backgroundMaterial="material" role="menu"
-      testId="message-actions"
+      testId="message-actions" transform-origin=origin animation=motion
       MenuRow(label="Reply", symbol="symbol:icon.arrowshape-turn-up-left", press=reply, destructive=false, identifier="menu-reply")
       if canShare
         MenuRow(label="Share", symbol="symbol:share", press=share, destructive=false, identifier="menu-share")
