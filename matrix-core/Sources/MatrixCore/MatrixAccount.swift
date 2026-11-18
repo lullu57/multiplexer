@@ -321,6 +321,7 @@ public final class MatrixAccount: @unchecked Sendable {
         let timeline = try await target.timeline()
         let items = TimelineItems(me: (try? client.userId()) ?? "")
         items.deliveries = deliveries
+        items.serviceMembers = Set((try? await target.roomInfo())?.serviceMembers ?? [])
         items.since = await chatMarks().cleared[roomId] ?? 0
         let handle = await timeline.addListener(listener: items)
         let live = LiveTimeline(timeline: timeline, items: items, handle: handle)
@@ -865,6 +866,8 @@ final class TimelineItems: TimelineListener, @unchecked Sendable {
     let names = MemberNames()
     /// The account's delivered messages, for a chat's own timeline; nil for a page's.
     var deliveries: Deliveries?
+    /// The room's bridge service members, which never count as readers; set once, as the chat opens.
+    var serviceMembers: Set<String> = []
     private let lock = NSLock()
     private var items: [TimelineItem] = []
     /// The time of the chat's newest message when it was deleted (`ChatMarks.cleared`): messages
@@ -971,7 +974,7 @@ final class TimelineItems: TimelineListener, @unchecked Sendable {
 
     func messages() -> [Message] {
         lock.withLock {
-            chatMessages(items, me: me, names: names, deliveries: deliveries).filter { $0.timestamp > cut }.map { message in
+            chatMessages(items, me: me, names: names, deliveries: deliveries, serviceMembers: serviceMembers).filter { $0.timestamp > cut }.map { message in
                 var message = message
                 message.presentationId = itemPresentations[message.id] ?? eventPresentations[message.eventId] ?? ""
                 message.isDelivered = message.isOwn && !message.eventId.isEmpty && (deliveries?.contains(message.eventId) ?? false)

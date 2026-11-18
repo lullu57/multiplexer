@@ -88,9 +88,13 @@ final class MemberNames: @unchecked Sendable {
 /// A timeline's items as the chat's messages, oldest first. Each message carries the read
 /// receipts of others on it; a receipt on an event the chat does not show (a join, a new
 /// name) counts for the message before it, as the sdk moves one off a hidden event.
-/// A receipt that is a bridge's status event's own is no reading (`Deliveries.isReport`).
-func chatMessages(_ items: [TimelineItem], me: String, names: MemberNames, deliveries: Deliveries? = nil) -> [Message] {
-    let isReading = { (user: String, receipt: Receipt) in !(deliveries?.isReport(user, receipt.timestamp) ?? false) }
+/// A receipt that is a bridge's status event's own is no reading (`Deliveries.isReport`), and a
+/// bridge's service member (its bot) is never a reader: its events move its receipt, not a person's.
+func chatMessages(_ items: [TimelineItem], me: String, names: MemberNames, deliveries: Deliveries? = nil,
+                  serviceMembers: Set<String> = []) -> [Message] {
+    let isReading = { (user: String, receipt: Receipt) in
+        !serviceMembers.contains(user) && !(deliveries?.isReport(user, receipt.timestamp) ?? false)
+    }
     // the names the timeline's own events carry: a quote or a receipt of the same person uses them.
     for item in items {
         if let event = item.asEvent(), case .ready(let name?, _, _, _, _) = event.senderProfile { names.learn(event.sender, name) }

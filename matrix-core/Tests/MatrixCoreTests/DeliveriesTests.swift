@@ -89,9 +89,14 @@ final class DeliveriesTests: XCTestCase {
 
         let text = "Delivery \(UUID().uuidString)"
         try await sender.sendAndWait(roomId: roomId, text: text)
+        // the chat can show the sent message a moment after the send returns.
         func sent() async throws -> Message {
-            let messages = try await sender.messages(roomId: roomId, limit: 20)
-            return try XCTUnwrap(messages.last { $0.body == text })
+            let start = Date()
+            while true {
+                if let found = try await sender.messages(roomId: roomId, limit: 20).last(where: { $0.body == text }) { return found }
+                if Date().timeIntervalSince(start) > 15 { return try XCTUnwrap(nil as Message?, "the sent message did not show within 15 s") }
+                try await Task.sleep(nanoseconds: 300_000_000)
+            }
         }
         var message = try await sent()
         XCTAssertTrue(message.eventId.hasPrefix("$"))
