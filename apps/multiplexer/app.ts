@@ -110,6 +110,10 @@ const reminderNotice = (r: ReminderChat) => ({
 });
 
 // a chat with no picture shows the first letters of its first two words, as Messages does.
+// ends an answer's turn on the phone, so a long answer goes on in a new one with its own budget
+// (exact's `scheduler.yield`); bun's tests have no scheduler, and there it does nothing.
+const breathe = (): Promise<void> =>
+  (globalThis as { scheduler?: { yield?: () => Promise<void> } }).scheduler?.yield?.() ?? Promise.resolve();
 const initials = (name: string): string =>
   name.split(/\s+/).filter((w) => /^[\p{L}\p{N}]/u.test(w)).slice(0, 2).map((w) => [...w][0].toUpperCase()).join('')
   || [...name.trim()][0] || '';
@@ -477,13 +481,24 @@ const sources: Sources = {
     void readThreadCopies(userId, native);
     saveThreadCopies(native);
     const answer = (await native.later({ op: 'rooms', filter, network, community, list: '', label })) as RoomsAnswer;
+    // exact gives each turn of an answer 100 ms of wall clock on the phone, and refuses the whole
+    // list past it ("couldn't load your chats"). with some hundreds of chats on a phone that is
+    // also syncing, one turn for the whole list went over (about 120 ms for 411 chats), so the
+    // list is made a few chats at a time, each batch in a turn of its own.
+    await breathe();
     const byId = new Map(answer.rooms.map((r) => [r.id, r]));
     // the reminders' notifications follow the account's reminders; a failure leaves the list as it is.
     syncReminders(answer.rooms, storage).catch((e) => console.log(`reminders: ${e}`));
+    await breathe();
+    const rooms: Result<'loadRoomsByRecency'>['rooms'] = [];
+    for (const [i, { oneToOne: _, ...r }] of answer.rooms.entries()) {
+      rooms.push({ ...r, initials: initials(r.name) });
+      if (i % 40 === 39) await breathe();
+    }
     return {
       owner: userId, filter, network, community, list: '', label, networks: answer.networks, communities: answer.communities, unread: answer.unread,
       archiveUnread: answer.archiveUnread, lowPriorityUnread: answer.lowPriorityUnread, reminders: answer.reminders,
-      rooms: answer.rooms.map(({ oneToOne: _, ...r }) => ({ ...r, initials: initials(r.name) })),
+      rooms,
       pinned: answer.pinned.flatMap((id) => {
         const r = byId.get(id);
         return r ? [{
