@@ -20,9 +20,10 @@
 - [ ] Rami: connect the iPhone, then install the stack's build and check on the phone: a tap on
   a notification opens its chat (app open, in the background, closed), opening a chat removes
   its notifications, and a new bridged chat's old messages arrive quiet.
-- [ ] Rami decides: turn on `matrix.message_status_events` for the WhatsApp bridge (a server
-  config change and a bridge restart) so WhatsApp reports delivery. Without it, a message shows
-  one tick until it is read.
+- [x] `matrix.message_status_events` is on for the WhatsApp bridge (Rami's ok 2026-11-18;
+  `server/notes/install.md`). Still to see: two ticks on a real WhatsApp message on the phone.
+- [ ] The Instagram bridge's pinned image is gone from the registry, so the full playbook
+  install fails at its pull. Pin a tag that exists, then run the full install and the self-check.
 - [ ] Later, if wanted: read delivery reports for chats that are not open (the SDK gives them only
   through a per-room subscription), and animate the held bubble's own move in the menu (needs
   an Exact change).

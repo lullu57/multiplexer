@@ -323,3 +323,27 @@ M0's recheck, B2 and P3.3 (`tasks/todo.md`).
   `dock.mau.dev/mautrix/meta:ig-v0.2610.0` (no container used them), and the build cache of
   our fork's build (15 entries, 1.17 GB, by id). Kept: the other project's Caddy build cache
   (1.4 GB, 14 months old) and all of its containers and images. Disk: 60 of 96 GB.
+
+## 2026-11-18: status events on the WhatsApp bridge (delivery ticks)
+
+Rami's request ("we can update the server"). `config.yml` adds `matrix.message_status_events:
+true` to the WhatsApp bridge's extension, so the bridge reports each sent message's state in
+the room and the app can show two ticks. The other bridges keep it off: only WhatsApp reports
+delivery.
+
+- The usual install (`--tags=install-all,ensure-matrix-users-created,start`) failed before it
+  changed anything: `ok=111 changed=1 failed=1`. The Instagram bridge's pinned image
+  (`dock.mau.dev/mautrix/meta:ig-4a7ebd92...-arm64`) is no longer in the registry (404,
+  "manifest unknown"), and the role always pulls. The image is still on the server, and the
+  bridge kept running (up 3 days). All services stayed up.
+- Narrow install instead:
+  `./server/playbook.sh --tags=install-mautrix-whatsapp,restart-group --extra-vars=group=mautrix-whatsapp`:
+  `ok=38 changed=2 failed=0`. It wrote the bridge's `config.yaml` and restarted only the
+  WhatsApp bridge, at 17:50:19 UTC. Synapse and the other bridges did not restart.
+
+**After:** the server's `config.yaml` has `message_status_events: true`. The bridge logged one
+`WRN` at the shutdown (websocket close) and no `WRN` or `ERR` after the start. Not yet seen: a
+`com.beeper.message_send_status` event for a real sent message.
+
+**Open:** a full install fails until the Instagram bridge's image is pinned to a tag the
+registry still has (or the pull is turned off for it). The self-check was not run.
