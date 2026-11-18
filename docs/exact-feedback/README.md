@@ -209,6 +209,10 @@ Later-lane evidence (2026-11-04): communities and Requests, finding 122; New Spa
 | 176 | An `svg` cannot sit in a text paragraph, and the inline alternative, an icon token, needs outlined strokes and is fitted into a square, so a wide glyph shrinks. | About 40 min, four drives | P3 | [an-inline-glyph-in-a-paragraph](issues/20261118-an-inline-glyph-in-a-paragraph-must-be-a-square-icon.md) |
 | 177 | A computed `vertical-align` fails only in the web target's check, reported as a `typescript-check` error at `app.ts` line 0. | A few minutes | P3 | [a-computed-vertical-align-fails](issues/20261118-a-computed-vertical-align-fails-only-in-the-web-check.md) |
 | 178 | `contract vocab svg` does not say which font an svg's `em` follows; sizes were set by eye. | Several screenshot drives | P3 | [contract-vocab-svg-em](issues/20261118-contract-vocab-svg-does-not-say-what-em-means.md) |
+| 179 | A drive's drag on a `pan` node ignores `touch-action` unless `--touch platform` is set, so it showed a defect a finger cannot produce. | About 15 min, four drives | P2 | [drive-drag-ignores-touch-action](issues/20261118-a-drive-drag-on-a-pan-node-ignores-touch-action.md) |
+| 180 | The arity error for an event bound through an `action` prop says "requires 2 ... supplies 2 of its 2". | One build | P3 | [arity-error-reads-as-a-match](issues/20261118-the-arity-error-for-an-event-through-an-action-prop.md) |
+| 181 | `scale` takes one number; a one-axis scale has no documented form. | One build | P3 | [scale-takes-one-number](issues/20261118-scale-takes-one-number.md) |
+| 182 | A drive cannot record sound, and no doc says so. | Two drives | P3 | [drive-cannot-record-sound](issues/20261118-a-drive-cannot-record-sound.md) |
 
 ## What worked well
 

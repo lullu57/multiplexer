@@ -62,13 +62,43 @@ component VoiceBars
     // how much has played, from 0 to 1; -1 when it is not the one playing (every bar in full ink).
     played: number
     ink: string
+    // a finger is moving through it: a playhead marks the place.
+    scrubbing: bool
   view
-    row flex=1 min-width=0 height=26 align-items="center" justify-content="space-between" gap=1 aria-hidden=true
-      if bars.length == 0
-        view flex=1 height=2 border-radius=1 background-color=ink opacity=0.4
-      for b, i in bars key=b.id
-        view width=2 flex-shrink=0 height=(3 + b.level * 23) border-radius=1 background-color=ink
-          opacity=(played < 0 or i < played * bars.length ? 1 : 0.4)
+    box position="relative" flex=1 min-width=0 height=26 aria-hidden=true
+      row width="100%" height=26 align-items="center" justify-content="space-between" gap=1
+        if bars.length == 0
+          view flex=1 height=2 border-radius=1 background-color=ink opacity=0.4
+        for b, i in bars key=b.id
+          view width=2 flex-shrink=0 height=(3 + b.level * 23) border-radius=1 background-color=ink
+            opacity=(played < 0 or i < played * bars.length ? 1 : 0.4)
+      if scrubbing and played >= 0
+        view position="absolute" top=-4 bottom=-4 left=`calc(${played * 100}% - 1.5px)` width=3 border-radius=1.5 background-color=ink
+
+// the waveform as the place to move through a voice message: a tap goes to that place, and a finger
+// dragged along it scrubs (the bars and the time follow at once; the sound moves when it lifts).
+// down notes where the finger landed, since a tap and a drag both start there; a drag up or down is
+// still the chat's scroll (pan-y), and the drag along it is this pan's, not the swipe to reply's.
+// With no length there is nothing to move through, so it is the plain waveform.
+component VoiceScrub
+  props
+    bars: VoiceBar[]
+    played: number
+    ink: string
+    scrubbing: bool
+    enabled: bool
+    down: action
+    tap: action
+    drag: action
+    drop: action
+    identifier: string
+  view
+    if enabled
+      box id=identifier testId=identifier flex=1 min-width=0 min-height=44 display="flex" align-items="center" touch-action="pan-y"
+        pointerdown=down press=tap pan=drag panrelease=drop -exact-press-opacity=1 aria-hidden=true
+        VoiceBars(bars=bars, played=played, ink=ink, scrubbing=scrubbing)
+    else
+      VoiceBars(bars=bars, played=played, ink=ink, scrubbing=false)
 
 // the round play or pause mark: the ink's disc with the bubble's colour cut out, as Beeper draws it;
 // a spinner while the sound downloads.
@@ -107,16 +137,22 @@ component VoiceBubble
     loading: bool
     // seconds played, while it is current.
     time: number
+    // where a finger scrubbing it is, from 0 to 1; -1 when none is.
+    scrub: number
     speed: number
     dimmed: bool
     stacked: bool
     play: action
     speedUp: action
+    scrubDown: action
+    scrubTap: action
+    scrubDrag: action
+    scrubDrop: action
     identifier: string
   derive ink = outgoing ? appearance.onFill : "-exact-label"
   derive fill = outgoing ? appearance.bubble : "bubble.incoming"
-  derive played = current and seconds > 0 ? min(1, time / seconds) : -1
-  derive shown = current and time > 0 ? max(0, ceil(seconds - time)) : seconds
+  derive played = scrub >= 0 ? scrub : (current and seconds > 0 ? min(1, time / seconds) : -1)
+  derive shown = scrub >= 0 ? max(0, ceil(seconds * (1 - scrub))) : (current and time > 0 ? max(0, ceil(seconds - time)) : seconds)
   view
     column id=identifier testId=identifier role="group" aria-label=`Voice message, ${lengthText(seconds)}` gap=4
       width="16.5rem" max-width="100%" box-sizing="border-box" padding=(stacked ? "6px 12px 6px 4px" : "1px 6px 1px 4px")
@@ -126,7 +162,8 @@ component VoiceBubble
         button appearance="none" press=play aria-label=`${playing ? "Pause" : "Play"}, ${lengthText(seconds)}` testId=`${identifier}-play`
           min-width=44 min-height=44 margin="0 -8px 0 -3px" display="flex" align-items="center" justify-content="center" flex-shrink=0
           VoicePlayMark(playing=playing, loading=loading, ink=ink, fill=fill, size=22)
-        VoiceBars(bars=bars, played=played, ink=ink)
+        VoiceScrub(bars=bars, played=played, ink=ink, scrubbing=(scrub >= 0), enabled=(seconds > 0 and not dimmed), down=scrubDown, tap=scrubTap,
+          drag=scrubDrag, drop=scrubDrop, identifier=`${identifier}-wave`)
         if not stacked
           text lengthText(shown) font="-exact-footnote" color=ink font-variant-numeric="tabular-nums" flex-shrink=0
             testId=`${identifier}-time`
@@ -157,7 +194,7 @@ component VoiceStill
       row align-items="center" gap=8 min-width=0
         view min-width=44 min-height=44 margin="0 -8px 0 -3px" display="flex" align-items="center" justify-content="center" flex-shrink=0
           VoicePlayMark(playing=false, loading=false, ink=ink, fill=fill, size=22)
-        VoiceBars(bars=bars, played=-1, ink=ink)
+        VoiceBars(bars=bars, played=-1, ink=ink, scrubbing=false)
         if not stacked
           text lengthText(seconds) font="-exact-footnote" color=ink font-variant-numeric="tabular-nums" flex-shrink=0
           view min-width=44 min-height=44 display="flex" align-items="center" justify-content="center" flex-shrink=0
@@ -273,14 +310,20 @@ component DraftBar
     current: bool
     playing: bool
     time: number
+    scrub: number
     play: action
-  derive played = current and seconds > 0 ? min(1, time / seconds) : -1
-  derive shown = current and time > 0 ? max(0, ceil(seconds - time)) : seconds
+    scrubDown: action
+    scrubTap: action
+    scrubDrag: action
+    scrubDrop: action
+  derive played = scrub >= 0 ? scrub : (current and seconds > 0 ? min(1, time / seconds) : -1)
+  derive shown = scrub >= 0 ? max(0, ceil(seconds * (1 - scrub))) : (current and time > 0 ? max(0, ceil(seconds - time)) : seconds)
   view
     row align-items="center" gap=6 min-height=48 padding="0 10px 0 8px" border-radius=24 testId="voice-draft"
       button appearance="none" press=play aria-label=(playing ? "Pause" : "Play") testId="voice-draft-play" min-width=36 min-height=44
         display="flex" align-items="center" justify-content="center" flex-shrink=0
         VoicePlayMark(playing=playing, loading=false, ink="AccentColor", fill="-exact-background", size=28)
-      VoiceBars(bars=bars, played=played, ink="AccentColor")
+      VoiceScrub(bars=bars, played=played, ink="AccentColor", scrubbing=(scrub >= 0), enabled=(seconds > 0 and bars.length > 0), down=scrubDown,
+        tap=scrubTap, drag=scrubDrag, drop=scrubDrop, identifier="voice-draft-wave")
       text lengthText(shown) font="-exact-footnote" font-size="min(-exact-footnote, 20px)" color="-exact-secondary-label" font-variant-numeric="tabular-nums"
         flex-shrink=0 testId="voice-draft-time"

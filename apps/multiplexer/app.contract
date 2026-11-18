@@ -1690,6 +1690,8 @@ component Multiplexer
                                     playing=(voicePlaying == m.id and voiceRoom == openRoom and not voicePaused and voiceSrc != ""),
                                     loading=(voicePlaying == m.id and voiceSrc == "" and not failed(voiceFile)), time=voiceTime, speed=voiceSpeed,
                                     dimmed=(m.state == "sending"), stacked=viewport.accessibilityTextSize, play=playVoice(m.id), speedUp=speedUp,
+                                    scrub=(scrubbing and scrubOn == m.id ? scrubAt : -1), scrubDown=scrubDown(m.id, `voice-${m.id}-wave`),
+                                    scrubTap=scrubLand(m.id, m.seconds), scrubDrag=scrubDrag(m.id, `voice-${m.id}-wave`), scrubDrop=scrubDrop(m.id, m.seconds),
                                     identifier=`voice-${m.id}`)
                                 // its transcript under it (transcribe-members.contract): the words heard while it is
                                 // made, then the text, kept across launches by its sound file's name.
@@ -1892,7 +1894,9 @@ component Multiplexer
                   -exact-layout-transition=(viewport.prefersReducedMotion ? "none" : (voiceOffered ? "300ms 70ms cubic-bezier(.32,.72,0,1)" : "300ms cubic-bezier(.32,.72,0,1)"))
                   if recording == "draft"
                     DraftBar(appearance=appearance, bars=draftBars, seconds=draftSeconds, current=(voicePlaying == "draft"),
-                      playing=(voicePlaying == "draft" and not voicePaused), time=voiceTime, play=playVoice("draft"))
+                      playing=(voicePlaying == "draft" and not voicePaused), time=voiceTime, play=playVoice("draft"),
+                      scrub=(scrubbing and scrubOn == "draft" ? scrubAt : -1), scrubDown=scrubDown("draft", "voice-draft-wave"),
+                      scrubTap=scrubLand("draft", draftSeconds), scrubDrag=scrubDrag("draft", "voice-draft-wave"), scrubDrop=scrubDrop("draft", draftSeconds))
                   else if recording != "idle"
                     RecordingBar(track=recordTrack, milliseconds=recorderState.duration, starting=(recording != "recording"))
                   else
@@ -1977,7 +1981,7 @@ component Multiplexer
               dark=(viewport.prefersColorScheme == "dark"))
             // the chat's one player of voice messages: no box of its own; each bubble is its button.
             if voiceSrc != ""
-              audio voiceSrc id="voice-player" paused=voicePaused playbackRate=voiceSpeed preservesPitch=true timeupdate=voiceTimed
+              audio voiceSrc id="voice-player" paused=voicePaused currentTime=voiceFrom playbackRate=voiceSpeed preservesPitch=true timeupdate=voiceTimed
                 ended=voiceEnded pause=voiceStopped play=voiceStarted testId="voice-player"
             // a held message: the chat blurs, the bubble stays where it was, the reactions sit above it
             // and its actions under it, as Beeper and Messages show them.

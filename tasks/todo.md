@@ -13,6 +13,10 @@
 - [x] Old messages a bridge fills in show as one quiet notification per chat; unit tests for the
   rule, the service fixture and the live push test (message time) pass; the push-capable build
   with the extension compiles and installs on the Simulator.
+- [x] A tap or a drag on a voice message's waveform moves through it (a playhead, the bars and
+  the time follow the finger; the sound moves on the lift). Real-touch drives: tap, drag, drag
+  past the start, vertical scroll from the waveform, reply swipe beside it, long press.
+  Not driven: the recorded draft's waveform (a drive cannot record), VoiceOver.
 - [ ] Rami: connect the iPhone, then install the stack's build and check on the phone: a tap on
   a notification opens its chat (app open, in the background, closed), opening a chat removes
   its notifications, and a new bridged chat's old messages arrive quiet.
