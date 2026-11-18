@@ -39,6 +39,7 @@ enum MatrixCoreError: Error { case keychain(Int32) }
 struct PushContent {
     var isDirect = true; var senderName = "Sender"; var chatName = "Chat"; var body = "Text"
     var roomId = "!room:example.org"; var isNoisy = true; var network = "matrix"; var senderAvatarUrl: String? = nil
+    var timestamp: UInt64 = 0
 }
 enum MatrixPush {
     static func sharedStore(in container: URL, store: String) -> URL { container.appendingPathComponent(store) }
@@ -91,7 +92,8 @@ final class Delivery {
     const binary = join(app, 'MacOS/check');
     const compile = Bun.spawnSync(['xcrun', 'swiftc', '-parse-as-library', '-swift-version', '5',
       join(directory, 'NotificationService.swift'), join(directory, 'Fixture.swift'),
-      join(root, 'apps/multiplexer/extensions/notifications/NotificationActivation.swift'), '-o', binary]);
+      join(root, 'apps/multiplexer/extensions/notifications/NotificationActivation.swift'),
+      join(root, 'apps/multiplexer/extensions/notifications/NotificationAge.swift'), '-o', binary]);
     if (compile.exitCode !== 0) throw new Error(compile.stderr.toString());
     const run = Bun.spawnSync([binary]);
     if (run.exitCode !== 0) throw new Error(run.stderr.toString().split('\n').slice(0, 4).join('\n'));

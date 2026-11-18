@@ -30,6 +30,9 @@ public struct PushContent: Equatable, Sendable {
     public var hasMention: Bool
     /// The thread's root event, for a message in a thread; nil otherwise.
     public var threadId: String?
+    /// When the message was sent, in milliseconds since 1970; 0 when not known (an invite). A
+    /// bridge fills a new chat with old messages, each with its original time and its own push.
+    public var timestamp: UInt64 = 0
 }
 
 /// The notification extension's side of push: its own client, in its own process, on the app's
@@ -74,9 +77,11 @@ extension PushContent {
         let room = item.roomInfo
         var sender = ""
         var body = "Message"
+        var sentAt: UInt64 = 0
         switch item.event {
         case .timeline(let event):
             sender = event.senderId()
+            sentAt = event.timestamp()
             body = (try? event.content()).map(pushBody) ?? body
         case .invite(let inviter):
             sender = inviter
@@ -94,7 +99,8 @@ extension PushContent {
                   // in a bridged chat the sender is a ghost of the bridge (`@whatsapp_123:server`).
                   network: RoomNetwork.of(serviceMembers: room.serviceMembers, heroes: [sender], ownUserId: ownUserId),
                   isDirect: RoomSummary.isOneToOne(people: people, isDirect: room.isDirect, bridged: service > 0, kind: kind),
-                  isNoisy: item.isNoisy ?? false, hasMention: item.hasMention ?? false, threadId: item.threadId)
+                  isNoisy: item.isNoisy ?? false, hasMention: item.hasMention ?? false, threadId: item.threadId,
+                  timestamp: sentAt)
     }
 }
 

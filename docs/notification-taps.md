@@ -30,13 +30,28 @@ a cross-process identity, and JSON-encoded `notifications.notificationclick`
 arguments. Exact owns launch-time queuing and duplicate callback suppression.
 Do not replace this with an unscoped `navigate` URL: that bypasses the account check.
 
+## Old messages a bridge fills in
+
+When a bridge makes a new chat, it fills it with the messages from before (up to 50). On our
+server each one is sent as an ordinary message with its original time, and the server pushes
+every one: no push rule can tell them from news, and the push carries no time. The extension
+reads the message's time (`PushContent.timestamp`). A message more than ten minutes older
+than its push is shown quiet: no sound, no banner, no screen wake (`NotificationAge.swift`).
+The extension also removes the quiet notifications already delivered for the same chat, so a
+chat's history leaves about one entry in Notification Center. iOS lets an extension change a
+notification but not drop it; dropping needs Apple's restricted
+`com.apple.developer.usernotifications.filtering` entitlement, which the app does not have.
+A push whose message cannot be read in time keeps its "New message" alert, since its age is
+not known. Opening the chat removes the quiet entries as it removes the others.
+
 ## Regression checks
 
 On the Mac, set `EXACT2` to the framework checkout used to build the app:
 
 ```sh
 EXACT2=/path/to/exact bun test scripts/notification-activation.test.ts \
-  scripts/notification-service.test.ts apps/multiplexer/notification-target.test.ts
+  scripts/notification-service.test.ts scripts/notification-age.test.ts \
+  apps/multiplexer/notification-target.test.ts
 SIMULATOR=<owned-booted-udid> bun test scripts/communication-notification.test.ts
 ```
 
