@@ -146,6 +146,8 @@ type MessagesAnswer = {
     audio: { isVoice?: boolean; duration?: number; waveform?: number[]; key?: string };
     // who has read the chat up to it, besides its sender and you; name "" until it is known, time 0 when unknown.
     readers: { name: string; time: number }[];
+    // your own message reached a recipient's device, as its bridge reported; absent in an older kept copy.
+    isDelivered?: boolean;
   }[];
 };
 
@@ -223,20 +225,22 @@ const namesText = (names: string[]): string =>
   names.length <= 1 ? (names[0] ?? '')
     : names.length <= 3 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
       : `${names.slice(0, 2).join(', ')} and ${names.length - 2} others`;
-/** What shows under the chat's newest message: yours says "Sent" (our server has it; its
- * network's delivery is not known) until someone reads it; then a direct chat says "Seen" (with
- * the time the view writes) and a group "Seen by" who. Under another person's, a group says who
- * else has seen it. */
-const statusOf = (m: MessagesAnswer['messages'][number], group: boolean): { status: string; statusTime: number } => {
-  const none = { status: '', statusTime: 0 };
+/** What shows under the chat's newest message: yours says "Sent" (our server has it) until its
+ * bridge reports that it reached the other person's device ("Delivered"; only some networks
+ * report it) or someone reads it; then a direct chat says "Seen" (with the time the view writes)
+ * and a group "Seen by" who. Under another person's, a group says who else has seen it.
+ * ticks: the marks before your own message's status: 0 none (sending, failed, or not yours),
+ * 1 sent, 2 delivered, 3 read. */
+export const statusOf = (m: Pick<MessagesAnswer['messages'][number], 'isOwn' | 'state' | 'readers' | 'isDelivered'>, group: boolean): { status: string; statusTime: number; ticks: number } => {
+  const none = { status: '', statusTime: 0, ticks: 0 };
   const named = m.readers.map((r) => r.name).filter((n) => n !== '');
   if (m.isOwn) {
     if (m.state !== 'sent') return none;
-    if (m.readers.length === 0) return { status: 'Sent', statusTime: 0 };
-    if (!group) return { status: 'Seen', statusTime: Math.max(...m.readers.map((r) => r.time)) };
+    if (m.readers.length === 0) return m.isDelivered ? { status: 'Delivered', statusTime: 0, ticks: 2 } : { status: 'Sent', statusTime: 0, ticks: 1 };
+    if (!group) return { status: 'Seen', statusTime: Math.max(...m.readers.map((r) => r.time)), ticks: 3 };
   }
   if (!group || m.readers.length === 0) return none;
-  return { status: named.length > 0 ? `Seen by ${namesText(named)}` : 'Seen', statusTime: 0 };
+  return { status: named.length > 0 ? `Seen by ${namesText(named)}` : 'Seen', statusTime: 0, ticks: m.isOwn ? 3 : 0 };
 };
 const MESSAGE_COUNT = 20;
 // a photo in the chat fits a box this many rem wide and tall, as Messages keeps a tall one short.
@@ -381,7 +385,7 @@ function threadOf(answer: MessagesAnswer, roomId: string, isDirect: boolean, roo
       const tall = m.isSticker ? STICKER_SIDE : PHOTO_MAX_HEIGHT;
       const media = m.isImage || m.file.name !== undefined || isVideo || m.isSticker || isAudio;
       const bigEmoji = !media && !m.waitingForKey && isBigEmoji(m.body);
-      const status = i === answer.messages.length - 1 ? statusOf(m, group) : { status: '', statusTime: 0 };
+      const status = i === answer.messages.length - 1 ? statusOf(m, group) : { status: '', statusTime: 0, ticks: 0 };
       return {
         id: m.id, presentationId: m.presentationId || m.id, event: m.event, sender: m.sender, senderName: m.senderName, senderInitials: initials(m.senderName), senderPicture: m.senderPicture,
         body: m.body, time: m.time, isOwn: m.isOwn, state: m.state, startsGroup, endsRun, showName,
@@ -969,7 +973,7 @@ export const overlay: Overlay = (source, args, answer, writes): ReturnType<Overl
     const sameGroup = previous && sameMessageGroup(previous.time, time, utcOffset);
     outgoing.startsGroup = !sameGroup;
     messages = messages.map((m, i) => i === messages.length - 1
-      ? { ...m, status: '', statusTime: 0, endsRun: !(sameGroup && m.sender === sender) } : m);
+      ? { ...m, status: '', statusTime: 0, ticks: 0, endsRun: !(sameGroup && m.sender === sender) } : m);
     messages = [...messages, outgoing];
   }
   return messages === thread.messages ? undefined : { ...thread, messages };

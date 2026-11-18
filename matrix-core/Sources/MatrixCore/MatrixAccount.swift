@@ -33,6 +33,8 @@ public final class MatrixAccount: @unchecked Sendable {
     let newestMessages: NewestMessages
     /// What each bridged chat the member count leaves open is, from its bridge (RoomKinds.swift).
     let roomKinds: RoomKinds
+    /// This account's messages that a bridge reported as delivered (Deliveries.swift).
+    let deliveries: Deliveries
     let accountDataWatch = AccountDataWatch()
     /// The list preview's receipts and the watch that reads them again (PreviewReceipts.swift).
     let receipts = PreviewReceipts()
@@ -56,6 +58,7 @@ public final class MatrixAccount: @unchecked Sendable {
         latest = LatestMessages(file: storeDirectory.appendingPathComponent("latest-messages.json"))
         newestMessages = NewestMessages(file: storeDirectory.appendingPathComponent("newest-messages.json"))
         roomKinds = RoomKinds.stored(in: storeDirectory)
+        deliveries = Deliveries(file: storeDirectory.appendingPathComponent("delivered-messages.json"))
         // a photo or file on its way tells how much of it is uploaded (`Message.uploadProgress`).
         client.enableSendQueueUploadProgress(enable: true)
     }
@@ -224,7 +227,12 @@ public final class MatrixAccount: @unchecked Sendable {
             case .remoteInvite:
                 break
             }
-            if let live = lock.withLock({ readyTimelines[summary.id] }) { summary.fillDeleted(live.items.messages()) }
+            if let live = lock.withLock({ readyTimelines[summary.id] }) {
+                let shown = live.items.messages()
+                summary.fillDeleted(shown)
+                // a delivery is known only for a chat that is open, whose newest message is at hand.
+                if summary.lastStatus == "sent", let newest = shown.last, newest.isOwn, newest.isDelivered { summary.lastStatus = "delivered" }
+            }
             if summary.lastMessage == "Message deleted" { summary.lastStatus = "" }
             rooms.append(summary)
         }
@@ -309,11 +317,15 @@ public final class MatrixAccount: @unchecked Sendable {
     }
 
     private func openTimeline(_ roomId: String, limit: Int, timeout: TimeInterval) async throws -> LiveTimeline {
-        let timeline = try await room(roomId, timeout: timeout).timeline()
+        let target = try await room(roomId, timeout: timeout)
+        let timeline = try await target.timeline()
         let items = TimelineItems(me: (try? client.userId()) ?? "")
+        items.deliveries = deliveries
         items.since = await chatMarks().cleared[roomId] ?? 0
         let handle = await timeline.addListener(listener: items)
         let live = LiveTimeline(timeline: timeline, items: items, handle: handle)
+        // a bridge's delivery reports come as room events of their own, while the chat is open.
+        live.statusHandle = watchDeliveries(target, roomId: roomId)
         // the chat opens on what this device has kept of it, else on the first page with a message
         // (R04: waiting for a full screen of history held a chat on its spinner for a second or more).
         // The timeline hands over what it keeps in its first diff, a moment after the listener; a
@@ -333,6 +345,8 @@ public final class MatrixAccount: @unchecked Sendable {
             self.notify(.room(roomId))
         }
         lock.withLock { readyTimelines[roomId] = live }
+        // the list learns a kept delivery of the chat's newest message only from its open chat.
+        if items.messages().last?.isDelivered == true { notify(.rooms) }
         // the rest of the chat's first screen comes behind it; the chat hears when it is in.
         live.startFill(to: limit) { [weak self] paged in if paged { self?.notify(.room(roomId)) } }
         return live
@@ -663,6 +677,8 @@ final class LiveTimeline: @unchecked Sendable {
     let items: TimelineItems
     let textSends = TextSendGate()
     private let handle: TaskHandle
+    /// The watch on the room's delivery reports (Deliveries.swift), which lives as long as the timeline.
+    var statusHandle: TaskHandle?
     private let lock = NSLock()
     /// The oldest message the chat shows; older ones are loaded but not shown yet.
     private var firstShown: String?
@@ -835,7 +851,10 @@ final class LiveTimeline: @unchecked Sendable {
         return all.firstIndex(where: { $0.id == first }) ?? 0
     }
 
-    deinit { handle.cancel() }
+    deinit {
+        handle.cancel()
+        statusHandle?.cancel()
+    }
 }
 
 /// A timeline's items, kept current by applying the sdk's diffs in order.
@@ -844,6 +863,8 @@ final class TimelineItems: TimelineListener, @unchecked Sendable {
     private let me: String
     /// Names that a quote or a read receipt needs and its event does not carry (ChatDetails.swift).
     let names = MemberNames()
+    /// The account's delivered messages, for a chat's own timeline; nil for a page's.
+    var deliveries: Deliveries?
     private let lock = NSLock()
     private var items: [TimelineItem] = []
     /// The time of the chat's newest message when it was deleted (`ChatMarks.cleared`): messages
@@ -950,9 +971,10 @@ final class TimelineItems: TimelineListener, @unchecked Sendable {
 
     func messages() -> [Message] {
         lock.withLock {
-            chatMessages(items, me: me, names: names).filter { $0.timestamp > cut }.map { message in
+            chatMessages(items, me: me, names: names, deliveries: deliveries).filter { $0.timestamp > cut }.map { message in
                 var message = message
                 message.presentationId = itemPresentations[message.id] ?? eventPresentations[message.eventId] ?? ""
+                message.isDelivered = message.isOwn && !message.eventId.isEmpty && (deliveries?.contains(message.eventId) ?? false)
                 return message
             }
         }

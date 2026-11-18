@@ -4,7 +4,8 @@ import MatrixRustSDK
 #endif
 
 /// The receipt of the list's preview when the chat's newest message is this account's own:
-/// "sent" when the server has it, "seen" when another member's public read receipt is at or after
+/// "sent" when the server has it, "delivered" when its chat is open and its bridge reported the
+/// delivery (set in `rooms()`, Deliveries.swift), "seen" when another member's public read receipt is at or after
 /// it, and "" when the newest message is not this account's or its state is unknown (still being
 /// sent, or failed). From what the SDK already gives: the latest event has no id, so a receipt is
 /// placed by its event's time against the message's time. That time can be this device's clock (the
@@ -87,7 +88,7 @@ final class PreviewReceipts: @unchecked Sendable {
 
     /// After a list read: the chats whose own newest message is still only "sent", by its time.
     func remember(_ rooms: [RoomSummary]) {
-        let pending = rooms.filter { $0.lastStatus == "sent" && $0.mergeId == nil }
+        let pending = rooms.filter { ($0.lastStatus == "sent" || $0.lastStatus == "delivered") && $0.mergeId == nil }
         lock.withLock { sent = Dictionary(pending.prefix(30).map { ($0.id, (timestamp: $0.lastTimestamp, text: $0.lastMessage)) }, uniquingKeysWith: { a, _ in a }) }
     }
 

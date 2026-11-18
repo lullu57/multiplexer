@@ -288,7 +288,7 @@ final class Matrix: ExactModule {
                         ["id": $0.id, "presentationId": $0.presentationId, "event": $0.eventId, "sender": $0.sender, "senderName": $0.senderName, "body": $0.body,
                          "time": Double($0.timestamp), "isOwn": $0.isOwn, "state": $0.sendState.rawValue,
                          "waitingForKey": $0.waitingForKey, "isEdited": $0.isEdited,
-                         "isDeleted": $0.isDeleted, "isEditable": $0.isEditable,
+                         "isDeleted": $0.isDeleted, "isEditable": $0.isEditable, "isDelivered": $0.isDelivered,
                          "isImage": $0.image != nil, "image": thumbnail(account, roomId: roomId, message: $0),
                          "imageWidth": $0.image?.width ?? 0, "imageHeight": $0.image?.height ?? 0,
                          "senderPicture": senderPicture(account, roomId: roomId, message: $0),

@@ -13,7 +13,7 @@ use LabelEditor, LabelPicker from "./labels.contract"
 use ChatBar, MergeTab, ComposerNetwork, replyPlaceholder, composerPlaceholder from "./chat.contract"
 use MessageActions, ForwardSheet, ForwardChat, deleteMessageText from "./menu.contract"
 use EmojiSheet, EmojiRow, emojiGroupOf from "./emoji.contract"
-use Run, DayHeader, NewLine, StatusLine, JumpButton, BigEmoji, RichBalloon, LinkBalloon, LinkPreview, Sticker, VideoPoster, VideoPlayer, SwipeReply, seenText, videoLabel, OlderLine from "./details.contract"
+use Run, DayHeader, NewLine, StatusLine, Ticks, JumpButton, BigEmoji, RichBalloon, LinkBalloon, LinkPreview, Sticker, VideoPoster, VideoPlayer, SwipeReply, seenText, videoLabel, OlderLine from "./details.contract"
 use VoiceBar, VoiceBubble, VoiceStill, VoiceButton, VoiceCancel, VoiceStop, RecordingBar, DraftBar from "./voice.contract"
 use NewConversation from "./new-conversation.contract"
 use SearchBar, SearchResults, ChatSearchResults, JumpNote from "./search.contract"
@@ -138,7 +138,8 @@ shape RoomList
 // and nothing else, large with no bubble. balloon: a bubble shows its text (not for a photo, file,
 // video or sticker without a caption, a big emoji, or a message waiting for its key). runs: its
 // text, with its links apart. status: under the chat's newest message, "Sent", "Seen" or
-// "Seen by Ana, Ben" ("" for none); statusTime: when a direct chat's other person saw it, or 0.
+// "Delivered", "Seen" or "Seen by Ana, Ben" ("" for none); statusTime: when a direct chat's other
+// person saw it, or 0; ticks: the marks before your own status (0 none, 1 sent, 2 delivered, 3 read).
 // isDeleted: deleted for everyone, so it has no text, picture or file (no balloon). isEditable:
 // your own text message, which an edit can change. editUntil, deleteUntil: when its network stops
 // taking an edit or a delete for everyone (0: no limit). A voice message or an audio file (isAudio) has its
@@ -189,6 +190,7 @@ shape Message
   runs: Run[]
   status: string
   statusTime: number
+  ticks: number
   isAudio: bool
   bars: VoiceBar[]
   // a voice message's sound file's name, the same on every launch: its transcript's key.
@@ -1771,7 +1773,7 @@ component Multiplexer
                               button press=discard(m.id) destructive=true disabled=pending(discarded) testId=`discard-${m.id}`
                                 text "Delete"
                           // changing receipt heights during flight restarts the transcript's end-follow scroll.
-                          StatusLine(label=(flightHidesReceipt and flightId == m.presentationId ? "" : seenText(m.status, m.statusTime, shown, time.utcOffset)), own=m.isOwn,
+                          StatusLine(label=(flightHidesReceipt and flightId == m.presentationId ? "" : seenText(m.status, m.statusTime, shown, time.utcOffset)), own=m.isOwn, ticks=m.ticks,
                             indent=(thread.group and not m.isOwn ? 36 : 0), identifier=`status-${m.presentationId}`,
                             reserved=(m.status != "" or (m.isOwn and m.id == lastId and m.state != "failed")),
                             reduced=(viewport.prefersReducedMotion or (flightPhase > 0 and flightRoom == openRoom)))
@@ -2148,16 +2150,16 @@ component RoomFace
         // an unread chat: a bold name and a count beside the preview; muted, a grey
         // count; with a mention, "@" and the accent. marked unread by hand: a dot.
         row gap=8 align-items="flex-start"
-          // an own message: its receipt in place of "You:", an outline check once sent, filled once seen.
+          // an own message: its receipt in place of "You:": one tick once sent, two once delivered
+          // (known while its chat is open), two in the accent once seen. The ticks stand before the
+          // preview, whose second line starts under its first (a paragraph holds no svg).
           // a word longer than the line (a link) breaks where it must, so the ellipsis ends it in its box.
-          text font="-exact-subheadline" color="-exact-secondary-label" line-clamp=2
-            min-height="2.6em" flex=1 min-width=0 overflow-wrap="break-word" testId=`room-preview-${r.id}`
+          row flex=1 min-width=0 gap="0.3em" align-items="baseline" font="-exact-subheadline"
             if r.lastIsOwn and r.lastStatus != "" and r.lastMessage != ""
-              image (r.lastStatus == "seen" ? "symbol:icon.seen" : "symbol:icon.sent") width="0.95em" height="0.95em"
-                vertical-align="-0.12em" color="-exact-secondary-label" aria-label=(r.lastStatus == "seen" ? "Seen" : "Sent")
-                testId=`receipt-${r.id}`
-              text " "
-            text (r.lastMessage != "" ? preview(r) : "")
+              Ticks(level=(r.lastStatus == "seen" ? 3 : (r.lastStatus == "delivered" ? 2 : 1)), size=0.95,
+                label=(r.lastStatus == "seen" ? "Seen" : (r.lastStatus == "delivered" ? "Delivered" : "Sent")), identifier=`receipt-${r.id}`)
+            text (r.lastMessage != "" ? preview(r) : "") font="-exact-subheadline" color="-exact-secondary-label" line-clamp=2
+              min-height="2.6em" flex=1 min-width=0 overflow-wrap="break-word" testId=`room-preview-${r.id}`
           if r.mentions > 0
             view flex-shrink=0 testId=`count-${r.id}`
               AccentBadge(appearance=appearance, label=`@ ${countText(max(r.unread, r.mentions))}`, muted=false)
