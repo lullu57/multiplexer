@@ -227,11 +227,11 @@ public final class MatrixAccount: @unchecked Sendable {
             case .remoteInvite:
                 break
             }
-            if let live = lock.withLock({ readyTimelines[summary.id] }) {
-                let shown = live.items.messages()
-                summary.fillDeleted(shown)
+            if let live = lock.withLock({ readyTimelines[summary.id] }), let newest = live.items.newestForPreview() {
+                summary.fillDeleted(newest)
                 // a delivery is known only for a chat that is open, whose newest message is at hand.
-                if summary.lastStatus == "sent", let newest = shown.last, newest.isOwn, newest.isDelivered { summary.lastStatus = "delivered" }
+                if summary.lastStatus == "sent", newest.isDelivered,
+                   newest.timestamp == summary.lastTimestamp { summary.lastStatus = "delivered" }
             }
             if summary.lastMessage == "Message deleted" { summary.lastStatus = "" }
             rooms.append(summary)
@@ -347,7 +347,7 @@ public final class MatrixAccount: @unchecked Sendable {
         }
         lock.withLock { readyTimelines[roomId] = live }
         // the list learns a kept delivery of the chat's newest message only from its open chat.
-        if items.messages().last?.isDelivered == true { notify(.rooms) }
+        if items.newestForPreview()?.isDelivered == true { notify(.rooms) }
         // the rest of the chat's first screen comes behind it; the chat hears when it is in.
         live.startFill(to: limit) { [weak self] paged in if paged { self?.notify(.room(roomId)) } }
         return live
@@ -972,12 +972,29 @@ final class TimelineItems: TimelineListener, @unchecked Sendable {
         set { lock.withLock { cut = newValue } }
     }
 
+    // the inbox needs only the last visible message, without receipt or presentation metadata.
+    func newestForPreview() -> Message? {
+        lock.withLock {
+            for item in items.reversed() {
+                guard let event = item.asEvent(), event.timestamp > cut,
+                      var message = Message(event, id: item.uniqueId().id, me: me, names: names) else { continue }
+                message.isDelivered = isDelivered(message)
+                return message
+            }
+            return nil
+        }
+    }
+
+    private func isDelivered(_ message: Message) -> Bool {
+        message.isOwn && !message.eventId.isEmpty && deliveries?.contains(message.eventId) == true
+    }
+
     func messages() -> [Message] {
         lock.withLock {
             chatMessages(items, me: me, names: names, deliveries: deliveries, serviceMembers: serviceMembers).filter { $0.timestamp > cut }.map { message in
                 var message = message
                 message.presentationId = itemPresentations[message.id] ?? eventPresentations[message.eventId] ?? ""
-                message.isDelivered = message.isOwn && !message.eventId.isEmpty && (deliveries?.contains(message.eventId) ?? false)
+                message.isDelivered = isDelivered(message)
                 return message
             }
         }
@@ -1183,6 +1200,11 @@ private func displayName(_ sender: String, _ profile: ProfileDetails) -> String 
 
 extension Message {
     init?(_ event: EventTimelineItem, id: String, me: String, names: MemberNames) {
+        self.init(contentOf: event, id: id, me: me, names: names)
+        if case .eventId(let eventId) = event.eventOrTransactionId { self.eventId = eventId }
+    }
+
+    private init?(contentOf event: EventTimelineItem, id: String, me: String, names: MemberNames) {
         guard case .msgLike(let content) = event.content else { return nil }
         let name = displayName(event.sender, event.senderProfile)
         var picture = ""
