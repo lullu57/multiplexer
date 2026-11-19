@@ -1,5 +1,14 @@
 # Mux: tasks
 
+## Stack review (2026-11-18)
+
+- [x] Exercise delivery-store concurrency, account-scoped push cleanup, notification routing
+  with server ports, and 411-room inbox projection with out-of-order responses.
+- [x] Avoid rebuilding an open timeline for a single preview and repeating an inbox
+  refresh for every read receipt in one poll.
+- [ ] Measure first usable inbox on the physical phone after these review changes.
+- [ ] Verify background WhatsApp delivery and notification grouping on the physical phone.
+
 ## Daily-use fixes stack (2026-11-18)
 
 - [x] Reply bar and quote keep a long link inside a card; a tap on a quote goes to the quoted

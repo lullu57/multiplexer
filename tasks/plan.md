@@ -4,6 +4,14 @@ Mux (formerly Multiplexer) combines many chat networks into one inbox on a serve
 
 ## Status
 
+The daily-use stack review on 2026-11-18 found a delivery-cache write race, unnecessary
+full-transcript work during inbox refresh, and a send animation that could start while
+the destination was still off screen. The review fixes are grouped on the stack tip.
+A local Bun microbenchmark alternating the original and revised inbox loader on the
+same 411 synthetic rooms (200 measured calls per version) took 0.18 ms vs 0.16 ms at
+the median and 0.54 ms vs 0.30 ms at p95. These timings cover JavaScript projection
+with an immediate native fixture. Phone startup, sync and rendering need separate measurement.
+
 **Daily-use fixes, a stack of five (2026-11-18, branches `fix/reply-quote-layout` ->
 `feat/message-menu-motion` -> `fix/send-scrolls-to-end-first` -> `feat/delivery-ticks` ->
 `fix/quiet-old-message-notifications`):** each fault was reproduced first on the owned

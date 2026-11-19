@@ -102,8 +102,7 @@ func chatMessages(_ items: [TimelineItem], me: String, names: MemberNames, deliv
     var messages: [Message] = [], receipts: [[String: Receipt]] = []
     for item in items {
         guard let event = item.asEvent() else { continue }
-        if var message = Message(event, id: item.uniqueId().id, me: me, names: names) {
-            if case .eventId(let eventId) = event.eventOrTransactionId { message.eventId = eventId }
+        if let message = Message(event, id: item.uniqueId().id, me: me, names: names) {
             messages.append(message)
             receipts.append(event.readReceipts.filter { $0.key != me && $0.key != event.sender && isReading($0.key, $0.value) })
         } else if let last = messages.last {
