@@ -39,3 +39,9 @@ test('opening a visible chat clears delivered notifications without waiting for 
   await clear(owner, '', true);
   expect(requests).toHaveLength(1);
 });
+
+test('notification taps distinguish server ports and preserve grouped desktop destinations', () => {
+  expect(resolveTarget(`chat:${owner}:8448:${room}`, owner)).toEqual({ owner, room: '' });
+  expect(resolveTarget(`chat:${owner}:!other:example.org`, owner)).toEqual({ owner, room: '' });
+  expect(resolveTarget(`chat:${owner}:merge:pair`, owner)).toEqual({ owner, room });
+});
