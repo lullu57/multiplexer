@@ -17,3 +17,5 @@ Observed on 2026-11-12 with upstream checkout `8536d208c40f97be3f132ea266d5029e2
 ## More evidence (2026-11-13)
 
 At `6f4917bda`, a fresh native build seeded the registry cache but still recompiled the framework and module code for several minutes, with long quiet intervals between phase boundaries. Periodic phase progress would distinguish compilation from a stall.
+
+During a native review drive on 2026-11-18, the build log contained only three cache messages for roughly four minutes. The host was compiling the JavaScript bake helper. A start and finish marker in the log for that stage would make the wait diagnosable.

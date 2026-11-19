@@ -128,8 +128,8 @@ extension RoomSummary {
     /// A deleted message newer than the sdk's latest event, which leaves deleted messages out: the
     /// preview says so, as the chat does. Only an open chat's timeline knows it. The time stays the
     /// latest event's, as the list's order does.
-    mutating func fillDeleted(_ messages: [Message]) {
-        guard let newest = messages.last, newest.isDeleted, newest.timestamp >= lastTimestamp else { return }
+    mutating func fillDeleted(_ newest: Message) {
+        guard newest.isDeleted, newest.timestamp >= lastTimestamp else { return }
         lastMessage = "Message deleted"
         lastSenderName = newest.senderName
         lastIsOwn = newest.isOwn

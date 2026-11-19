@@ -12,36 +12,39 @@ test('an old message is quiet and replaces the earlier quiet ones of its chat on
     writeFileSync(join(directory, 'Check.swift'), String.raw`
 import Foundation
 import UserNotifications
-func request(_ id: String, room: String, history: Bool) -> UNNotificationRequest {
+func request(_ id: String, room: String, history: Bool, user: String = "a") -> UNNotificationRequest {
     let content = UNMutableNotificationContent()
     content.userInfo = ["room_id": room]
-    if history { NotificationAge.quiet(content) }
+    if history { NotificationAge.quiet(content, userId: user) }
     return UNNotificationRequest(identifier: id, content: content, trigger: nil)
 }
 @main struct Check {
     static func main() {
         let now = Date(timeIntervalSince1970: 2_000_000_000)
         let ms = { (secondsAgo: Double) in UInt64((now.timeIntervalSince1970 - secondsAgo) * 1000) }
-        precondition(!NotificationAge.isHistory(sentAt: ms(5), now: now), "a message of now is news")
-        precondition(!NotificationAge.isHistory(sentAt: ms(9 * 60), now: now), "a slow bridge's message is news")
-        precondition(NotificationAge.isHistory(sentAt: ms(11 * 60), now: now), "an 11 minute old message is history")
-        precondition(NotificationAge.isHistory(sentAt: ms(30 * 86_400), now: now))
-        precondition(!NotificationAge.isHistory(sentAt: 0, now: now), "an unknown time is news")
-        precondition(!NotificationAge.isHistory(sentAt: ms(-3600), now: now), "a clock ahead is news")
+        precondition(!NotificationAge.isHistory(sentAt: ms(5), network: "whatsapp", now: now), "a message of now is news")
+        precondition(!NotificationAge.isHistory(sentAt: ms(9 * 60), network: "whatsapp", now: now), "a slow bridge's message is news")
+        precondition(NotificationAge.isHistory(sentAt: ms(11 * 60), network: "whatsapp", now: now), "an 11 minute old message is history")
+        precondition(NotificationAge.isHistory(sentAt: ms(30 * 86_400), network: "whatsapp", now: now))
+        precondition(!NotificationAge.isHistory(sentAt: 0, network: "whatsapp", now: now), "an unknown time is news")
+        precondition(!NotificationAge.isHistory(sentAt: ms(-3600), network: "whatsapp", now: now), "a clock ahead is news")
+
+        precondition(!NotificationAge.isHistory(sentAt: ms(3600), network: "matrix", now: now), "delayed native pushes keep their alert")
 
         let content = UNMutableNotificationContent()
         content.sound = .default
         content.userInfo = ["room_id": "!a:example.org", "exact": ["event": "notificationclick"]]
-        NotificationAge.quiet(content)
+        NotificationAge.quiet(content, userId: "a")
         precondition(content.sound == nil && content.interruptionLevel == .passive)
         precondition(content.userInfo["exact"] != nil, "quiet keeps the chat destination")
 
         let delivered = [request("old-a-1", room: "!a:example.org", history: true),
+                         request("other-owner", room: "!a:example.org", history: true, user: "b"),
                          request("news-a", room: "!a:example.org", history: false),
                          request("old-b", room: "!b:example.org", history: true),
                          request("old-a-2", room: "!a:example.org", history: true)]
-        precondition(NotificationAge.earlier(delivered, roomId: "!a:example.org") == ["old-a-1", "old-a-2"])
-        precondition(NotificationAge.earlier(delivered, roomId: "").isEmpty)
+        precondition(NotificationAge.earlier(delivered, roomId: "!a:example.org", userId: "a") == ["old-a-1", "old-a-2"])
+        precondition(NotificationAge.earlier(delivered, roomId: "", userId: "a").isEmpty)
         print("notification age passed")
     }
 }

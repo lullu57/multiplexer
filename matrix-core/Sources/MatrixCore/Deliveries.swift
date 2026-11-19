@@ -43,6 +43,8 @@ final class Deliveries: @unchecked Sendable {
 
     private let file: URL?
     private let lock = NSLock()
+    private let writeLock = NSLock()
+    private var needsSave = false
     /// The oldest first, so the cap drops the oldest.
     private var kept: Kept
     private var ids: Set<String>
@@ -74,12 +76,13 @@ final class Deliveries: @unchecked Sendable {
     func record(contentJson: String, sender: String, timestamp: UInt64, me: String) -> Bool {
         guard sender != me, let status = SendStatus.parse(contentJson) else { return false }
         let delivered = status.isSuccess && status.isDelivered ? status.eventId : nil
-        let saved: Kept? = lock.withLock {
+        let changed = lock.withLock {
             let report = Self.report(sender, timestamp)
-            let news = [reports.insert(report).inserted, delivered.map { ids.insert($0).inserted } ?? false]
-            guard news.contains(true) else { return nil }
-            if news[0] { kept.reports.append(report) }
-            if news[1], let delivered { kept.delivered.append(delivered) }
+            let newReport = reports.insert(report).inserted
+            let newDelivery = delivered.map { ids.insert($0).inserted } ?? false
+            guard newReport || newDelivery else { return false }
+            if newReport { kept.reports.append(report) }
+            if newDelivery, let delivered { kept.delivered.append(delivered) }
             if kept.reports.count > Self.limit {
                 for old in kept.reports.prefix(kept.reports.count - Self.limit) { reports.remove(old) }
                 kept.reports.removeFirst(kept.reports.count - Self.limit)
@@ -88,10 +91,22 @@ final class Deliveries: @unchecked Sendable {
                 for old in kept.delivered.prefix(kept.delivered.count - Self.limit) { ids.remove(old) }
                 kept.delivered.removeFirst(kept.delivered.count - Self.limit)
             }
-            return kept
+            needsSave = true
+            return true
         }
-        guard let saved else { return false }
-        if let file, let data = try? JSONEncoder().encode(saved) { try? data.write(to: file, options: .atomic) }
+        guard changed, let file else { return changed }
+        // take the latest snapshot after acquiring the writer so overlapping callbacks coalesce.
+        writeLock.withLock {
+            let snapshot: Kept? = lock.withLock {
+                guard needsSave else { return nil }
+                needsSave = false
+                return kept
+            }
+            if let snapshot {
+                do { try JSONEncoder().encode(snapshot).write(to: file, options: .atomic) }
+                catch { lock.withLock { needsSave = true } }
+            }
+        }
         return true
     }
 }

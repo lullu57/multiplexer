@@ -56,6 +56,20 @@ final class DeliveriesTests: XCTestCase {
         XCTAssertFalse(deliveries.isReport("@bot:example.org", nil))
     }
 
+    func testConcurrentReportsSurviveReopening() {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let deliveries = Deliveries(file: file)
+        DispatchQueue.concurrentPerform(iterations: 128) { number in
+            let content = #"{"status":"SUCCESS","delivered_to_users":["user"],"m.relates_to":{"rel_type":"m.reference","event_id":"$\#(number)"}}"#
+            _ = deliveries.record(contentJson: content, sender: "bridge", timestamp: UInt64(number), me: "me")
+        }
+        let reopened = Deliveries(file: file)
+        for number in 0..<128 {
+            XCTAssertTrue(reopened.contains("$\(number)"))
+        }
+    }
+
     func testDeliveriesAreKeptInTheirFileUpToTheLimit() throws {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("deliveries-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: file) }
