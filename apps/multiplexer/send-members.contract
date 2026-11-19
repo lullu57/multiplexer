@@ -22,7 +22,8 @@ members Multiplexer
   // sent while the reader was away from the chat's end: the flight waits (phase 1, the text still in
   // the field) until the chat has scrolled to its end, so the bubble lands where the reader looks.
   state flightHold = false
-  derive flightMessage = first(thread.messages.filter(m => m.presentationId == flightId))
+  derive flightMessage = flightPhase > 0 or sentAway != "" ? first(thread.messages.filter(m => m.presentationId == flightId)) : none
+  derive holdingSentDraft = flightPhase == 1 and flightRoom == openRoom and composer.text == flightDraft and composer.replyTo == flightReply
   // the field keeps the width the message leaves from until it has risen clear (the swell, 185 ms on).
   derive flightHoldsField = flightPhase > 0 and flightPhase < 4 and flightRoom == openRoom
   // the sent row's receipt waits for the landing, as the template's does.
@@ -45,7 +46,7 @@ members Multiplexer
     // an action reads state as it was when it began, so what this one decides is bound first.
     let flies = not (viewport.prefersReducedMotion or pageFrame.unavailable or pill.unavailable)
     flightPhase = flies ? 1 : 0
-    flightHold = away and flies
+    flightHold = not atTranscriptEnd and flies
     flightBottom = pageFrame.y + pageFrame.height - pill.y - pill.height
     fieldBottom = pill.y + pill.height
     fieldX = pill.x
@@ -69,10 +70,14 @@ members Multiplexer
     else if failed(sent)
       flightPhase = 0
     else if flightHold
-      // the chat is at its end, or it could not get there in time: the flight starts now.
-      if not away or stamp - flightAt > 1500
+      if atTranscriptEnd and flightMessage != none
         flightHold = false
         flightAt = stamp
+      else if stamp - flightAt > 1500
+        flightHold = false
+        flightPhase = 0
+        sentAway = flightId
+        handOffSend()
     else if flightPhase == 1
       let flier = frame("flying-balloon")
       if not flier.unavailable and not flier.provisional
@@ -122,7 +127,7 @@ members Multiplexer
   task failedTextSend when failed(sent)
     after(1, restoreSendDraft)
   // the sent row is in the list now: the chat scrolls to it, to the very end.
-  task endBeforeFlight when flightHold and flightPhase > 0 and lastKey == flightId key=flightId
+  task endBeforeFlight when flightHold and flightPhase > 0 and flightRoom == openRoom and flightMessage != none key=flightId
     after(1, toEnd)
   task sendingFlight when flightPhase > 0
     every(frame, animateSend)

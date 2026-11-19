@@ -102,7 +102,14 @@ members Multiplexer
     rememberSearch()
     openLink(url)
   action startJump
-    send jumped = showMessage(jumpRoom, jumpEvent)
+    // the native jump provides five messages of context before the target when available.
+    let local = thread.cached ? [] : thread.messages.slice(thread.atStart ? 0 : 5)
+    match first(local.filter(m => m.event == jumpEvent))
+      case some(m)
+        jumpedTo = m.id
+        jumpEvent = ""
+      case none
+        send jumped = showMessage(jumpRoom, jumpEvent)
   // found: the chat moves to it once its messages hold it (showJump); else a note says so and the
   // chat stays at its newest.
   action afterJump
