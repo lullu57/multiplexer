@@ -76,10 +76,10 @@ const REMINDERS = 'app:/data/reminders', SCHEDULED = `${REMINDERS}/scheduled.jso
 export const reminderTag = (roomId: string) => `reminder-${roomId}`;
 type ReminderChat = { id: string; name: string; reminder: number; lastMessage: string; lastSender: string; lastIsOwn: boolean; merge: string };
 let syncing: Promise<void> = Promise.resolve();
-const syncReminders = (rooms: ReminderChat[], storage: Storage) => (syncing = syncing.then(() => syncNow(rooms, storage), () => syncNow(rooms, storage)));
-async function syncNow(rooms: ReminderChat[], storage: Storage) {
-  // a merged chat's reminder is the merged chat's: its rooms post none of their own.
-  const wanted = new Map(rooms.filter((r) => r.reminder > 0 && (r.merge === '' || r.id.startsWith('merge:'))).map((r) => [r.id, r]));
+let roomRequest = 0;
+let latestRoomSnapshot = 0;
+const syncReminders = (wanted: Map<string, ReminderChat>, storage: Storage) => (syncing = syncing.then(() => syncNow(wanted, storage), () => syncNow(wanted, storage)));
+async function syncNow(wanted: Map<string, ReminderChat>, storage: Storage) {
   let scheduled: Record<string, number> = {};
   try { scheduled = JSON.parse(new TextDecoder().decode(await storage.fs.readFile(SCHEDULED))); } catch { /* none yet */ }
   let changed = false;
@@ -109,7 +109,11 @@ const reminderNotice = (r: ReminderChat) => ({
   tag: reminderTag(r.id), data: r.id, showTrigger: r.reminder,
 });
 
-// a chat with no picture shows the first letters of its first two words, as Messages does.
+// ends an answer's turn on the phone, so a long answer goes on in a new one with its own budget
+// (exact's `scheduler.yield`); bun's tests have no scheduler, and there it does nothing.
+const breathe = (): Promise<void> =>
+  (globalThis as { scheduler?: { yield?: () => Promise<void> } }).scheduler?.yield?.() ?? Promise.resolve();
+// a chat with no picture shows the first letters of its first two words.
 const initials = (name: string): string =>
   name.split(/\s+/).filter((w) => /^[\p{L}\p{N}]/u.test(w)).slice(0, 2).map((w) => [...w][0].toUpperCase()).join('')
   || [...name.trim()][0] || '';
@@ -233,13 +237,13 @@ const namesText = (names: string[]): string =>
  * 1 sent, 2 delivered, 3 read. */
 export const statusOf = (m: Pick<MessagesAnswer['messages'][number], 'isOwn' | 'state' | 'readers' | 'isDelivered'>, group: boolean): { status: string; statusTime: number; ticks: number } => {
   const none = { status: '', statusTime: 0, ticks: 0 };
-  const named = m.readers.map((r) => r.name).filter((n) => n !== '');
   if (m.isOwn) {
     if (m.state !== 'sent') return none;
     if (m.readers.length === 0) return m.isDelivered ? { status: 'Delivered', statusTime: 0, ticks: 2 } : { status: 'Sent', statusTime: 0, ticks: 1 };
-    if (!group) return { status: 'Seen', statusTime: Math.max(...m.readers.map((r) => r.time)), ticks: 3 };
+    if (!group) return { status: 'Seen', statusTime: m.readers.reduce((time, r) => Math.max(time, r.time), 0), ticks: 3 };
   }
   if (!group || m.readers.length === 0) return none;
+  const named = m.readers.map((r) => r.name).filter((n) => n !== '');
   return { status: named.length > 0 ? `Seen by ${namesText(named)}` : 'Seen', statusTime: 0, ticks: m.isOwn ? 3 : 0 };
 };
 const MESSAGE_COUNT = 20;
@@ -419,7 +423,9 @@ const sources: Sources = {
       : { available: false, x: 0, width: 0, height: 0, bottom: 0 },
   resolveNotification: ([tag, room], _store, _storage, native): Result<'resolveNotification'> => {
     const owner = native?.available ? (native.call({ op: 'session' }) as { userId: string }).userId : '';
-    return { owner, room: owner && (!tag.startsWith('chat:') || tag.startsWith(`chat:${owner}:`)) ? room : '' };
+    // grouped desktop notifications identify the merge in their tag and open its underlying room.
+    const matches = tag === reminderTag(room) || tag === `chat:${owner}:${room}` || tag.startsWith(`chat:${owner}:merge:`);
+    return { owner, room: owner && matches ? room : '' };
   },
   importDroppedFiles: async ([owner, room, paths, limit], _store, storage, native): Promise<Result<'importDroppedFiles'>> => {
     try {
@@ -476,21 +482,38 @@ const sources: Sources = {
     // the chats' kept copies, read while the list loads (not awaited), and a write held back.
     void readThreadCopies(userId, native);
     saveThreadCopies(native);
+    const snapshot = ++roomRequest;
     const answer = (await native.later({ op: 'rooms', filter, network, community, list: '', label })) as RoomsAnswer;
-    const byId = new Map(answer.rooms.map((r) => [r.id, r]));
-    // the reminders' notifications follow the account's reminders; a failure leaves the list as it is.
-    syncReminders(answer.rooms, storage).catch((e) => console.log(`reminders: ${e}`));
+    // a 411-chat answer exceeded the phone's 100 ms turn budget. split row construction
+    // across turns, including pin lookups and reminder selection.
+    latestRoomSnapshot = Math.max(snapshot, latestRoomSnapshot);
+    await breathe();
+    // collect pin lookups in the same bounded pass that builds the rows.
+    const pinIds = new Set(answer.pinned);
+    const pins = new Map<string, Result<'loadRoomsByRecency'>['pinned'][number]>();
+    const rooms: Result<'loadRoomsByRecency'>['rooms'] = [];
+    const wanted = new Map<string, ReminderChat>();
+    for (let i = 0; i < answer.rooms.length; i++) {
+      if (i > 0 && i % 40 === 0) await breathe();
+      const { oneToOne, ...room } = answer.rooms[i];
+      // only the merged chat schedules a reminder for its component rooms.
+      if (room.reminder > 0 && (room.merge === '' || room.id.startsWith('merge:'))) wanted.set(room.id, room);
+      const avatarInitials = initials(room.name);
+      rooms.push(Object.assign(room, { initials: avatarInitials }));
+      if (pinIds.has(room.id)) {
+        pins.set(room.id, {
+          id: room.id, name: room.name, shortName: shortName(room.name, oneToOne),
+          avatar: room.avatar, initials: avatarInitials, unread: room.unread > 0 || room.markedUnread,
+        });
+      }
+    }
+    // a newer native answer may finish its batches first.
+    if (snapshot === latestRoomSnapshot) syncReminders(wanted, storage).catch((e) => console.log(`reminders: ${e}`));
     return {
       owner: userId, filter, network, community, list: '', label, networks: answer.networks, communities: answer.communities, unread: answer.unread,
       archiveUnread: answer.archiveUnread, lowPriorityUnread: answer.lowPriorityUnread, reminders: answer.reminders,
-      rooms: answer.rooms.map(({ oneToOne: _, ...r }) => ({ ...r, initials: initials(r.name) })),
-      pinned: answer.pinned.flatMap((id) => {
-        const r = byId.get(id);
-        return r ? [{
-          id, name: r.name, shortName: shortName(r.name, r.oneToOne), avatar: r.avatar, initials: initials(r.name),
-          unread: r.unread > 0 || r.markedUnread,
-        }] : [];
-      }),
+      rooms,
+      pinned: answer.pinned.flatMap((id) => pins.get(id) ?? []),
     };
   },
   loadLabels: async ([userId], _store, _storage, native): Promise<Result<'loadLabels'>> => {
@@ -939,6 +962,7 @@ const sources: Sources = {
     threadCopies.clear();
     servedCopy.clear();
     showingLive.clear();
+    latestRoomSnapshot = ++roomRequest;
     copiesOwner = '';
     copiesRead = undefined;
     copiesDirty = false;

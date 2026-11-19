@@ -1,5 +1,14 @@
 # Mux: tasks
 
+## Stack review (2026-11-18)
+
+- [x] Exercise delivery-store concurrency, account-scoped push cleanup, notification routing
+  with server ports, and 411-room inbox projection with out-of-order responses.
+- [x] Avoid rebuilding an open timeline for a single preview and repeating an inbox
+  refresh for every read receipt in one poll.
+- [ ] Measure first usable inbox on the physical phone after these review changes.
+- [ ] Verify background WhatsApp delivery and notification grouping on the physical phone.
+
 ## Daily-use fixes stack (2026-11-18)
 
 - [x] Reply bar and quote keep a long link inside a card; a tap on a quote goes to the quoted
@@ -20,9 +29,10 @@
 - [ ] Rami: connect the iPhone, then install the stack's build and check on the phone: a tap on
   a notification opens its chat (app open, in the background, closed), opening a chat removes
   its notifications, and a new bridged chat's old messages arrive quiet.
-- [ ] Rami decides: turn on `matrix.message_status_events` for the WhatsApp bridge (a server
-  config change and a bridge restart) so WhatsApp reports delivery. Without it, a message shows
-  one tick until it is read.
+- [x] `matrix.message_status_events` is on for the WhatsApp bridge (Rami's ok 2026-11-18;
+  `server/notes/install.md`). Still to see: two ticks on a real WhatsApp message on the phone.
+- [ ] The Instagram bridge's pinned image is gone from the registry, so the full playbook
+  install fails at its pull. Pin a tag that exists, then run the full install and the self-check.
 - [ ] Later, if wanted: read delivery reports for chats that are not open (the SDK gives them only
   through a per-room subscription), and animate the held bubble's own move in the menu (needs
   an Exact change).

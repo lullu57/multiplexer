@@ -13,29 +13,29 @@ enum NotificationAge {
     static let mark = "mux_history"
 
     /// `sentAt`: the message's time in milliseconds since 1970; 0 (not known) is never history.
-    static func isHistory(sentAt: UInt64, now: Date) -> Bool {
-        sentAt > 0 && now.timeIntervalSince1970 - Double(sentAt) / 1000 > historyAfter
+    static func isHistory(sentAt: UInt64, network: String, now: Date) -> Bool {
+        !network.isEmpty && network != "matrix" && sentAt > 0 && now.timeIntervalSince1970 - Double(sentAt) / 1000 > historyAfter
     }
 
-    static func quiet(_ content: UNMutableNotificationContent) {
+    static func quiet(_ content: UNMutableNotificationContent, userId: String) {
         content.sound = nil
         content.interruptionLevel = .passive
         content.relevanceScore = 0
-        content.userInfo[mark] = true
+        content.userInfo[mark] = userId
     }
 
     /// The quiet notifications already delivered for `roomId`, which a newer one replaces.
-    static func earlier(_ requests: [UNNotificationRequest], roomId: String) -> [String] {
-        guard !roomId.isEmpty else { return [] }
+    static func earlier(_ requests: [UNNotificationRequest], roomId: String, userId: String) -> [String] {
+        guard !roomId.isEmpty, !userId.isEmpty else { return [] }
         return requests.compactMap { request in
             let info = request.content.userInfo
-            return info[mark] as? Bool == true && info["room_id"] as? String == roomId ? request.identifier : nil
+            return info[mark] as? String == userId && info["room_id"] as? String == roomId ? request.identifier : nil
         }
     }
 
-    static func removeEarlier(roomId: String) async {
+    static func removeEarlier(roomId: String, userId: String) async {
         let center = UNUserNotificationCenter.current()
-        let ids = earlier(await center.deliveredNotifications().map(\.request), roomId: roomId)
+        let ids = earlier(await center.deliveredNotifications().map(\.request), roomId: roomId, userId: userId)
         if !ids.isEmpty { center.removeDeliveredNotifications(withIdentifiers: ids) }
     }
 }

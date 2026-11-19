@@ -129,9 +129,14 @@ matrix_bridge_mautrix_linkedin_network_displayname_template: "{% raw %}{{ with .
 # rami's ok, for all bridges: 2026-11-14. whatsapp and linkedin also keep `tel:` identifiers
 # (phone_numbers_in_profile), so a whatsapp person with a private `lid-` id still gets a wa.me
 # link; this puts contacts' phone numbers in their profiles on this server. rami's ok: 2026-11-14.
+# delivery ticks: the whatsapp bridge reports each sent message's state in the room
+# (`com.beeper.message_send_status`, with `delivered_to_users` once the other phone has it); the
+# app shows two ticks from it. one more event per sent message in each whatsapp room. only
+# whatsapp reports delivery, so the other bridges keep it off. rami's ok: 2026-11-18.
 matrix_bridge_mautrix_whatsapp_configuration_extension_yaml: |
   matrix:
     ghost_extra_profile_info: true
+    message_status_events: true
   bridge:
     phone_numbers_in_profile: true
 matrix_bridge_mautrix_meta_instagram_configuration_extension_yaml: |
