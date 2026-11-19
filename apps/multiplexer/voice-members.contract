@@ -14,6 +14,13 @@ members Multiplexer
   state voiceRoom = ""
   state voicePaused = true
   state voiceTime = 0
+  // where the player starts a voice message chosen by a tap on its waveform (seconds; 0 from play).
+  state voiceFrom = 0
+  // a finger on a waveform: the voice message it is on ("" for none), where it is from 0 to 1, and
+  // whether it has dragged (the bars then show it; a tap shows nothing until it lands).
+  state scrubOn = ""
+  state scrubAt = 0
+  state scrubbing = false
   // a voice message on its way in: "idle", "opening" (the microphone; the system may ask first),
   // "starting" (the recorder), "recording", "stopping", or "draft" (recorded, not sent yet), in
   // recordingRoom. Each step sends one request, whose failure ends it (voiceFailed).
@@ -70,10 +77,52 @@ members Multiplexer
     else
       voicePlaying = id
       voiceRoom = openRoom
+      voiceFrom = 0
       voiceTime = 0
       voicePaused = false
   action voiceTimed(t: number)
     voiceTime = t
+  // moving through a voice message (voice.contract's VoiceScrub). wave is the waveform's node.
+  action scrubDown(id: string, wave: string, e: PointerEvent)
+    let w = frame(wave).width
+    scrubOn = id
+    scrubbing = false
+    scrubAt = w > 0 ? max(0, min(1, e.offsetX / w)) : 0
+  action scrubDrag(id: string, wave: string, dx: number, dy: number)
+    let w = frame(wave).width
+    // it takes hold only along the waveform: up or down is the chat's scroll.
+    if scrubOn == id and w > 0 and (scrubbing or dx * dx > dy * dy)
+      // one tick as the drag takes hold, as a slider's thumb gives.
+      if not scrubbing
+        haptic("selection")
+      scrubbing = true
+      scrubAt = max(0, min(1, scrubAt + dx / w))
+  // the finger lifts: the sound goes to that place. One in the player keeps playing or stays paused;
+  // another starts playing from there.
+  // a drag that never took hold (a scroll of the chat that began on the waveform) moves nothing.
+  action scrubDrop(id: string, seconds: number, vx: number, vy: number)
+    if scrubbing
+      scrubLand(id, seconds)
+    else if scrubOn == id
+      scrubOn = ""
+  action scrubLand(id: string, seconds: number)
+    if scrubOn == id
+      // just short of the end, so a drag to the end does not end it before it is heard.
+      let to = max(0, min(seconds - 0.25, scrubAt * seconds))
+      scrubOn = ""
+      scrubbing = false
+      if voicePlaying == id and (id == "draft" or voiceRoom == openRoom)
+        voiceTime = to
+        if voiceSrc != ""
+          fastSeek("voice-player", to)
+        else
+          voiceFrom = to
+      else
+        voicePlaying = id
+        voiceRoom = openRoom
+        voiceFrom = to
+        voiceTime = to
+        voicePaused = false
   // the player paused or played by itself (a call, another app's sound): the button follows it.
   action voiceStopped
     voicePaused = true
@@ -86,6 +135,9 @@ members Multiplexer
     voicePlaying = ""
     voicePaused = true
     voiceTime = 0
+    voiceFrom = 0
+    scrubOn = ""
+    scrubbing = false
   // the speed chip: 1x, 1.5x, 2x, for every voice message.
   action speedUp
     voiceSpeed = nextSpeed(voiceSpeed)

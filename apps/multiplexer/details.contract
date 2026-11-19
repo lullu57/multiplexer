@@ -60,11 +60,31 @@ component NewLine
       text "New" font="-exact-footnote" color="AccentColor" aria-hidden=true
       view flex=1 height=1 background-color="AccentColor"
 
-// under the newest message: "Sent", "Seen 4:42 PM" or "Seen by Ana, Ben", on its sender's side.
+// an own message's receipt as marks, as WhatsApp draws them: one check once sent (level 1), two
+// once delivered (2), two in the accent once read (3). size: its height in em of the text around
+// it, in a row with that text (a text paragraph holds no svg). label: what VoiceOver says; ""
+// where the text beside it says it already.
+component Ticks
+  props
+    level: number
+    size: number
+    label: string
+    identifier: string
+  view
+    svg width=`${level > 1 ? size * 1.5 : size * 1.07}em` height=`${size}em` viewBox=(level > 1 ? "0 0 21 14" : "0 0 15 14")
+      flex-shrink=0 fill="none" stroke=(level > 2 ? "AccentColor" : "-exact-secondary-label")
+      stroke-width=1.7 stroke-linecap="round" stroke-linejoin="round" aria-hidden=(label == "") aria-label=label role="img" testId=identifier
+      path d="M 1.5 7.5 L 5.5 11.5 L 13.5 2.5"
+      if level > 1
+        path d="M 9.6 9.6 L 11.5 11.5 L 19.5 2.5"
+
+// under the newest message: "Sent", "Delivered", "Seen 4:42 PM" or "Seen by Ana, Ben", on its
+// sender's side; before your own, its ticks.
 component StatusLine
   props
     label: string
     own: bool
+    ticks: number
     indent: number
     identifier: string
     reserved: bool
@@ -75,9 +95,14 @@ component StatusLine
   view
     column align-self="stretch" height=(reserved ? measuredHeight : 0) flex-shrink=0 overflow="hidden"
       transition=(reduced ? "none" : "height -exact-spring(438.65, 41.888, 1)")
-      text (label == "" ? "Sent" : label) id=identifier resize=measure font="-exact-caption1" color="-exact-secondary-label"
+      // a status of two lines (a group's readers, large text) starts each line after the ticks.
+      row id=identifier resize=measure font="-exact-caption1" align-items="baseline" gap="0.3em"
         align-self=(own ? "flex-end" : "flex-start") flex-shrink=0 opacity=(reserved and label != "" ? 1 : 0) aria-hidden=(not reserved or label == "")
-        text-align=(own ? "end" : "start") padding=(own ? "3px 6px 0 0" : `3px 0 0 ${indent + 6}px`) max-width="80%" testId="status"
+        padding=(own ? "3px 6px 0 0" : `3px 0 0 ${indent + 6}px`) max-width="80%" box-sizing="border-box"
+        if ticks > 0 and label != ""
+          Ticks(level=ticks, size=0.8, label="", identifier=`${identifier}-ticks`)
+        text (label == "" ? "Sent" : label) font="-exact-caption1" color="-exact-secondary-label" min-width=0
+          text-align=(own and ticks == 0 ? "end" : "start") testId="status"
 
 // the jump to the newest message, bottom right over the chat while it is out of view, with how
 // many messages are unread ("23" and an arrow, as Beeper has it); the arrow alone when none are.

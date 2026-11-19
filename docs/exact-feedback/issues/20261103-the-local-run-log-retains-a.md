@@ -20,3 +20,5 @@ Additional evidence (2026-11-07, exact2 `91d7b12620`): two sign-in drives on iOS
 Additional evidence (2026-11-07, exact2 `f53339adc8`): four sign-in drives on iOS (`type password <value>` into a masked field). `.exact/runs.jsonl` held the password once after one of them; the drive's own output did not. Redacted by hand.
 
 Additional evidence (2026-11-07, exact2 `1baa95c770`): four sign-in drives on iOS (`type password <value>` into a masked field), checked after each with `grep -c -F`. `.exact/runs.jsonl` held a password once after each of the two drives that signed in two accounts (one of the two passwords each time), and none after the two drives with one sign-in. The drive output did not. Redacted at once.
+
+Additional evidence (2026-11-18, exact2 `b46687753f`): two sign-in drives on iOS with a masked password field. The terminal output was masked; after the two drives, `.exact/runs.jsonl` held the typed password again. Redacted by hand after each drive.

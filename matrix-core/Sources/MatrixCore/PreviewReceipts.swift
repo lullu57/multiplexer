@@ -4,7 +4,8 @@ import MatrixRustSDK
 #endif
 
 /// The receipt of the list's preview when the chat's newest message is this account's own:
-/// "sent" when the server has it, "seen" when another member's public read receipt is at or after
+/// "sent" when the server has it, "delivered" when its chat is open and its bridge reported the
+/// delivery (set in `rooms()`, Deliveries.swift), "seen" when another member's public read receipt is at or after
 /// it, and "" when the newest message is not this account's or its state is unknown (still being
 /// sent, or failed). From what the SDK already gives: the latest event has no id, so a receipt is
 /// placed by its event's time against the message's time. That time can be this device's clock (the
@@ -26,6 +27,7 @@ extension MatrixAccount {
         for user in others {
             guard let receipt = try? await room.loadUserReceipt(receiptType: .read, thread: .unthreaded, userId: user),
                   let read = await receipts.event(receipt.eventId, in: room) else { continue }
+            if user == read.sender, !read.knownContent || deliveries.isReport(user, read.at) { continue }
             if read.at >= timestamp { return "seen" }
             if read.sender == me, !text.isEmpty, read.text == text, timestamp - read.at < 60_000 { return "seen" }
         }
@@ -61,12 +63,15 @@ final class PreviewReceipts: @unchecked Sendable {
         return found
     }
 
-    struct ReadEvent { let at: UInt64; let sender: String; let text: String? }
+    struct ReadEvent { let at: UInt64; let sender: String; let text: String?; let knownContent: Bool }
 
     func event(_ eventId: String, in room: Room) async -> ReadEvent? {
         if let known = lock.withLock({ events[eventId] }) { return known }
         guard let event = try? await room.loadOrFetchEvent(eventId: eventId) else { return nil }
-        let read = ReadEvent(at: UInt64(event.timestamp()), sender: event.senderId(), text: Self.text(of: event))
+        // custom bridge events have no sdk content variant; their sender's implicit receipt
+        // can arrive while the chat is closed and its status listener is inactive.
+        let content = try? event.content()
+        let read = ReadEvent(at: UInt64(event.timestamp()), sender: event.senderId(), text: Self.text(of: content), knownContent: content != nil)
         lock.withLock {
             if events.count > 2000 { events.removeAll() }
             events[eventId] = read
@@ -75,8 +80,8 @@ final class PreviewReceipts: @unchecked Sendable {
     }
 
     /// A text, notice or emote message's words, as the list shows them; nil for anything else.
-    static func text(of event: TimelineEvent) -> String? {
-        guard case .messageLike(let content)? = try? event.content(), case .roomMessage(let type, _) = content else { return nil }
+    static func text(of event: TimelineEventContent?) -> String? {
+        guard case .messageLike(let content)? = event, case .roomMessage(let type, _) = content else { return nil }
         switch type {
         case .text(let c): return FormattedText.plain(c.body, c.formatted)
         case .notice(let c): return FormattedText.plain(c.body, c.formatted)
@@ -87,7 +92,7 @@ final class PreviewReceipts: @unchecked Sendable {
 
     /// After a list read: the chats whose own newest message is still only "sent", by its time.
     func remember(_ rooms: [RoomSummary]) {
-        let pending = rooms.filter { $0.lastStatus == "sent" && $0.mergeId == nil }
+        let pending = rooms.filter { ($0.lastStatus == "sent" || $0.lastStatus == "delivered") && $0.mergeId == nil }
         lock.withLock { sent = Dictionary(pending.prefix(30).map { ($0.id, (timestamp: $0.lastTimestamp, text: $0.lastMessage)) }, uniquingKeysWith: { a, _ in a }) }
     }
 
@@ -114,14 +119,16 @@ final class PreviewReceiptWatch: @unchecked Sendable {
                 try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
                 guard let account, !Task.isCancelled else { return }
                 guard self.lock.withLock({ self.active }) else { continue }
+                var updated = false
                 for (id, last) in account.receipts.waiting {
                     guard let room = try? account.client.getRoom(roomId: id) else { continue }
                     let info = try? await room.roomInfo()
                     if await account.previewStatus(room, info: info, timestamp: last.timestamp, text: last.text) == "seen" {
                         account.receipts.seen(id)
-                        changed()
+                        updated = true
                     }
                 }
+                if updated { changed() }
             }
         }
         lock.withLock {

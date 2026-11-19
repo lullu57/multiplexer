@@ -47,6 +47,14 @@ final class NotificationService: UNNotificationServiceExtension {
                 }
                 let shown = fetched.content
                 Self.fill(content, with: shown)
+                // an old message a bridge filled in is not news: quiet, and one entry for its chat.
+                if NotificationAge.isHistory(sentAt: shown.timestamp, network: shown.network, now: Date()) {
+                    NotificationAge.quiet(content, userId: session.stored.session.userId)
+                    lock.withLock { fallback = content.copy() as? UNNotificationContent }
+                    await NotificationAge.removeEarlier(roomId: roomId, userId: session.stored.session.userId)
+                    finish(content, outcome: "shown quiet, an old message")
+                    return
+                }
                 // text is already ready if the optional image or system intent takes too long.
                 lock.withLock { fallback = content.copy() as? UNNotificationContent }
                 let avatar = await MatrixPush.senderAvatar(session: fetched.session, url: shown.senderAvatarUrl)

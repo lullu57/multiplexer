@@ -4,7 +4,7 @@ use ClipboardItem from "@exact/clipboard"
 use notificationclick, requestNotificationPermission, notificationStatus, NotificationStatus from "@exact/notifications"
 use EmptyState from "exact:content"
 use Appearance, AccentBadge from "./appearance.contract"
-use Balloon, Face from "./bubble.contract"
+use Balloon, Face, Quote, ComposerNote from "./bubble.contract"
 use ComposerRow, Attachment, chosenOf, isPicture, AddButton, AddPanel, Tray, FileBubble, UploadRing, sizeText, fileDetail from "./attach.contract"
 use BottomBar, PinnedGrid, PinnedChat, TitleMenu, InboxHeader, ChooseMark, SelectTitle, SelectBar, emptyTitle, emptyMessage, listTitle, listEmptyTitle, listEmptyMessage, deleteMessage, deleteChatsTitle, deleteChatsMessage from "./inbox.contract"
 use NetworkBadge, NetworkBadges, networkName from "./network.contract"
@@ -13,7 +13,7 @@ use LabelEditor, LabelPicker from "./labels.contract"
 use ChatBar, MergeTab, ComposerNetwork, replyPlaceholder, composerPlaceholder from "./chat.contract"
 use MessageActions, ForwardSheet, ForwardChat, deleteMessageText from "./menu.contract"
 use EmojiSheet, EmojiRow, emojiGroupOf from "./emoji.contract"
-use Run, DayHeader, NewLine, StatusLine, JumpButton, BigEmoji, RichBalloon, LinkBalloon, LinkPreview, Sticker, VideoPoster, VideoPlayer, SwipeReply, seenText, videoLabel, OlderLine from "./details.contract"
+use Run, DayHeader, NewLine, StatusLine, Ticks, JumpButton, BigEmoji, RichBalloon, LinkBalloon, LinkPreview, Sticker, VideoPoster, VideoPlayer, SwipeReply, seenText, videoLabel, OlderLine from "./details.contract"
 use VoiceBar, VoiceBubble, VoiceStill, VoiceButton, VoiceCancel, VoiceStop, RecordingBar, DraftBar from "./voice.contract"
 use NewConversation from "./new-conversation.contract"
 use SearchBar, SearchResults, ChatSearchResults, JumpNote from "./search.contract"
@@ -36,6 +36,16 @@ keyframes sendIn
 keyframes sendOut
   to opacity=0
 keyframes logoOut
+  to opacity=0
+// a held message's menu, as Messages': the chat blurs in, the bubble's copy lifts, and the reactions
+// and the actions grow out of the bubble's edge with a small overshoot. Leaving is a fade.
+keyframes menuDim
+  from opacity=0
+keyframes menuLift
+  from scale=0.94
+keyframes menuPop
+  from opacity=0 scale=0.4
+keyframes menuOut
   to opacity=0
 
 shape DesktopState
@@ -128,7 +138,8 @@ shape RoomList
 // and nothing else, large with no bubble. balloon: a bubble shows its text (not for a photo, file,
 // video or sticker without a caption, a big emoji, or a message waiting for its key). runs: its
 // text, with its links apart. status: under the chat's newest message, "Sent", "Seen" or
-// "Seen by Ana, Ben" ("" for none); statusTime: when a direct chat's other person saw it, or 0.
+// "Delivered", "Seen" or "Seen by Ana, Ben" ("" for none); statusTime: when a direct chat's other
+// person saw it, or 0; ticks: the marks before your own status (0 none, 1 sent, 2 delivered, 3 read).
 // isDeleted: deleted for everyone, so it has no text, picture or file (no balloon). isEditable:
 // your own text message, which an edit can change. editUntil, deleteUntil: when its network stops
 // taking an edit or a delete for everyone (0: no limit). A voice message or an audio file (isAudio) has its
@@ -164,6 +175,8 @@ shape Message
   hasReply: bool
   replyName: string
   replyBody: string
+  // the quoted message's event: a tap on the quote goes to it.
+  replyEvent: string
   reactions: Reaction[]
   isFile: bool
   fileName: string
@@ -177,6 +190,7 @@ shape Message
   runs: Run[]
   status: string
   statusTime: number
+  ticks: number
   isAudio: bool
   bars: VoiceBar[]
   // a voice message's sound file's name, the same on every launch: its transcript's key.
@@ -378,6 +392,9 @@ component Multiplexer
   state emojiGroup = "frequent"
   // the reader scrolled the chat's newest message out of view.
   state away = false
+  state atTranscriptEnd = true
+  // a message sent with no flight, until the chat has scrolled to its row (endAfterSend).
+  state sentAway = ""
   // the chat list is scrolled from its top: its header softens the chats under it (InboxHeader, R05).
   state roomsScrolled = false
   // the "+" panel is open, in the keyboard's place.
@@ -515,6 +532,9 @@ component Multiplexer
   // at the largest text sizes the lifted copy is shorter (a photo shrinks to fit), so the menu
   // has room under it; what it still lacks, it scrolls.
   derive heldCap = viewport.accessibilityTextSize ? 200 : 320
+  // the reactions and the actions grow in with a small overshoot; under Reduce Motion they fade.
+  derive menuPopMotion = viewport.prefersReducedMotion ? "menuDim 160ms ease-out both" : "menuPop 360ms cubic-bezier(0.3, 1.35, 0.5, 1) both"
+  derive menuLiftMotion = viewport.prefersReducedMotion ? "none" : "menuLift 360ms cubic-bezier(0.3, 1.35, 0.5, 1) both"
   derive heldScale = min(1, heldCap / max(1, heldHeight))
   derive heldShown = min(heldHeight, heldCap)
   derive heldMenuRoom = max(132, viewport.height - heldShown - 196)
@@ -570,6 +590,8 @@ component Multiplexer
   // the end or the chat from there reads it at once (scrolled, back). Older messages read nothing.
   task markSeen when reading and not away and openUnread > 0 key=`${openRoom}/${lastId}`
     after(1000, readNow)
+  task endAfterSend when sentAway != "" and flightRoom == openRoom and flightMessage != none key=sentAway
+    after(1, toSent)
   task reveal when revealing != "" key=revealing
     after(300, revealNow, wait=idle, max=1000)
   // a draft is kept a moment after typing stops, when its chat is left (follow, back), and when
@@ -617,6 +639,8 @@ component Multiplexer
     editing = ""
     // a chat opens at its newest message.
     away = false
+    atTranscriptEnd = true
+    sentAway = ""
   action back
     if reading and not away and openUnread > 0
       send markedRead = markRead(openRoom)
@@ -645,7 +669,10 @@ component Multiplexer
           topVisible = k
       case none
         topVisible = topVisible
-    let isAway = e.scrollHeight - e.scrollTop - e.clientHeight > max(1, frame(`row-${lastId}`).height)
+    let remaining = e.scrollHeight - e.scrollTop - e.clientHeight
+    if atTranscriptEnd != (remaining <= 1)
+      atTranscriptEnd = remaining <= 1
+    let isAway = remaining > max(1, frame(`row-${lastId}`).height)
     if isAway != away
       if isAway and reading and openUnread > 0 and not placing
         send markedRead = markRead(openRoom)
@@ -778,15 +805,18 @@ component Multiplexer
           composers = withComposer(composers, Composer(composer, text="", replyTo="", attachments=[]))
           unsaved = openRoom
           tooLarge = ""
-      else if composer.text.trim() != "" and not pending(sent)
+      else if composer.text.trim() != "" and not pending(sent) and not holdingSentDraft
         let sendId = `send-${shown}-${flightSerial + 1}`
         beginSendFlight(sendId)
         send sent = sendMessage(openRoom, composer.text.trim(), composer.replyTo, sendId, session.userId, shown)
-        if viewport.prefersReducedMotion
-          scrollIntoView("transcript", sendId, offset=1000000, behavior="instant")
-        else
+        // from higher up, the chat scrolls once the sent row is in it, and the flight waits for the
+        // end (send-members.contract's flightHold); at the end, it moves with the flight.
+        let flies = not (viewport.prefersReducedMotion or frame("conversation").unavailable or frame("composer-glass").unavailable)
+        if not flies
+          sentAway = sendId
+        else if atTranscriptEnd
           scrollIntoView("transcript", sendId, offset=1000000, behavior="smooth")
-        if viewport.prefersReducedMotion or frame("conversation").unavailable or frame("composer-glass").unavailable
+        if not flies
           composers = withComposer(composers, Composer(composer, text="", replyTo=""))
           unsaved = openRoom
       // Send keeps a keyboard that is up (its button retains the composer's focus), and raises none
@@ -878,6 +908,14 @@ component Multiplexer
       editing = ""
       revealing = id
       focus("composer")
+  // a tap on a reply's quote: the chat pages back to the quoted message and marks it a moment, as
+  // a found message (search-members.contract's jump). An event not known yet does nothing.
+  action openQuoted(event: string)
+    if event != ""
+      jumpRoom = openRoom
+      jumpEvent = event
+      jumpedTo = ""
+      jumpMissed = ""
   // Send Later's text now waits on the server: the composer empties, its reply too. A root action,
   // as a members file cannot name Composer (send-later-members.contract calls it).
   action clearComposer
@@ -1022,6 +1060,10 @@ component Multiplexer
   // so the transcript then follows the end as the sent message arrives (scrollFollowEnd).
   action toEnd
     scrollIntoView("transcript", lastKey, offset=1000000, behavior="smooth")
+  // a send with no flight (Reduce Motion): the chat goes to the sent row at once, when it is there.
+  action toSent
+    scrollIntoView("transcript", lastKey, offset=1000000, behavior="instant")
+    sentAway = ""
   action revealNow
     let key = match first(thread.messages.filter(m => m.id == revealing)) { case some(m) => m.presentationId, case none => revealing }
     scrollIntoView("transcript", key, block="nearest", behavior="smooth")
@@ -1654,6 +1696,8 @@ component Multiplexer
                                     playing=(voicePlaying == m.id and voiceRoom == openRoom and not voicePaused and voiceSrc != ""),
                                     loading=(voicePlaying == m.id and voiceSrc == "" and not failed(voiceFile)), time=voiceTime, speed=voiceSpeed,
                                     dimmed=(m.state == "sending"), stacked=viewport.accessibilityTextSize, play=playVoice(m.id), speedUp=speedUp,
+                                    scrub=(scrubbing and scrubOn == m.id ? scrubAt : -1), scrubDown=scrubDown(m.id, `voice-${m.id}-wave`),
+                                    scrubTap=scrubLand(m.id, m.seconds), scrubDrag=scrubDrag(m.id, `voice-${m.id}-wave`), scrubDrop=scrubDrop(m.id, m.seconds),
                                     identifier=`voice-${m.id}`)
                                 // its transcript under it (transcribe-members.contract): the words heard while it is
                                 // made, then the text, kept across launches by its sound file's name.
@@ -1673,13 +1717,7 @@ component Multiplexer
                                   background-color="-exact-fill" color="-exact-secondary-label" testId=`deleted-${m.id}`
                               else if m.balloon or m.bigEmoji
                                 if m.hasReply
-                                  column padding="2px 0 2px 10px" margin="0 6px 2px" border-left="2px solid -exact-separator" max-width="100%"
-                                    testId=`quote-${m.id}`
-                                    // the name comes a moment after the quote when its sender's profile is not loaded yet.
-                                    if m.replyName != ""
-                                      text m.replyName font="-exact-caption1" font-weight=600 color="-exact-secondary-label" line-clamp=1
-                                        testId=`quote-name-${m.id}`
-                                    text m.replyBody font="-exact-footnote" color="-exact-secondary-label" line-clamp=2
+                                  Quote(name=m.replyName, body=m.replyBody, press=openQuoted(m.replyEvent), message=m.id)
                                 // a message that is only a link with its card: the whole card opens the link, and the
                                 // same node holds the long press and the swipe (SwipeReply, as a photo), since a box
                                 // takes no tap and a press inside a swipe keeps the touch.
@@ -1743,7 +1781,7 @@ component Multiplexer
                               button press=discard(m.id) destructive=true disabled=pending(discarded) testId=`discard-${m.id}`
                                 text "Delete"
                           // changing receipt heights during flight restarts the transcript's end-follow scroll.
-                          StatusLine(label=(flightHidesReceipt and flightId == m.presentationId ? "" : seenText(m.status, m.statusTime, shown, time.utcOffset)), own=m.isOwn,
+                          StatusLine(label=(flightHidesReceipt and flightId == m.presentationId ? "" : seenText(m.status, m.statusTime, shown, time.utcOffset)), own=m.isOwn, ticks=m.ticks,
                             indent=(thread.group and not m.isOwn ? 36 : 0), identifier=`status-${m.presentationId}`,
                             reserved=(m.status != "" or (m.isOwn and m.id == lastId and m.state != "failed")),
                             reduced=(viewport.prefersReducedMotion or (flightPhase > 0 and flightRoom == openRoom)))
@@ -1828,19 +1866,11 @@ component Multiplexer
                     text "Retry"
               // an edit's bar takes the reply bar's place, in its look; the reply waits with the draft.
               if editing != ""
-                row align-items="center" gap=8 margin="6px 12px 0" padding-left=12 border-left="2px solid AccentColor" testId="edit-bar"
-                  column flex=1 min-width=0
-                    text "Editing" font="-exact-caption1" font-weight=600 color="AccentColor"
-                    text editOld font="-exact-footnote" color="-exact-secondary-label" line-clamp=2
-                  button press=cancelEdit aria-label="Cancel Editing" testId="cancel-edit"
-                    image "symbol:close"
+                ComposerNote(title="Editing", body=editOld, cancel=cancelEdit, cancelLabel="Cancel Editing", locked=false,
+                  identifier="edit-bar", cancelIdentifier="cancel-edit")
               else if composer.replyTo != ""
-                row align-items="center" gap=8 margin="6px 12px 0" padding-left=12 border-left="2px solid AccentColor" testId="reply-bar"
-                  column flex=1 min-width=0
-                    text `Replying to ${composer.replyName}` font="-exact-caption1" font-weight=600 color="AccentColor"
-                    text composer.replyBody font="-exact-footnote" color="-exact-secondary-label" line-clamp=2
-                  button press=cancelReply disabled=(not composerReady) aria-label="Cancel Reply" testId="cancel-reply"
-                    image "symbol:close"
+                ComposerNote(title=`Replying to ${composer.replyName}`, body=composer.replyBody, cancel=cancelReply, cancelLabel="Cancel Reply",
+                  locked=(not composerReady), identifier="reply-bar", cancelIdentifier="cancel-reply")
               // "+" on the left, the field, and the voice button or Send on the right, each its own glass,
               // as Beeper has them. While recording or as a draft: X replaces "+", Stop or Send replaces
               // voice; the capsule holds only the waveform. The photos and files picked sit above the text.
@@ -1870,7 +1900,9 @@ component Multiplexer
                   -exact-layout-transition=(viewport.prefersReducedMotion ? "none" : (voiceOffered ? "300ms 70ms cubic-bezier(.32,.72,0,1)" : "300ms cubic-bezier(.32,.72,0,1)"))
                   if recording == "draft"
                     DraftBar(appearance=appearance, bars=draftBars, seconds=draftSeconds, current=(voicePlaying == "draft"),
-                      playing=(voicePlaying == "draft" and not voicePaused), time=voiceTime, play=playVoice("draft"))
+                      playing=(voicePlaying == "draft" and not voicePaused), time=voiceTime, play=playVoice("draft"),
+                      scrub=(scrubbing and scrubOn == "draft" ? scrubAt : -1), scrubDown=scrubDown("draft", "voice-draft-wave"),
+                      scrubTap=scrubLand("draft", draftSeconds), scrubDrag=scrubDrag("draft", "voice-draft-wave"), scrubDrop=scrubDrop("draft", draftSeconds))
                   else if recording != "idle"
                     RecordingBar(track=recordTrack, milliseconds=recorderState.duration, starting=(recording != "recording"))
                   else
@@ -1916,7 +1948,7 @@ component Multiplexer
                       button appearance="none" press=post backgroundMaterial="glass" -exact-tint-color=appearance.tint
                         border-radius=16 -exact-press-opacity=1 width=32 height=32 retainFocus=true testId="send"
                         display="flex" align-items="center" justify-content="center"
-                        disabled=(not composerReady or (editing != "" ? editText.trim() == "" : ((composer.text.trim() == "" and composer.attachments.length == 0) or pending(sent) or pending(sentMedia))))
+                        disabled=(not composerReady or (editing != "" ? editText.trim() == "" : ((composer.text.trim() == "" and composer.attachments.length == 0) or pending(sent) or holdingSentDraft or pending(sentMedia))))
                         aria-label=(editing != "" ? "Save Edit" : "Send")
                         image (editing != "" ? "symbol:checkmark" : "symbol:send") font-size="min(-exact-body, 16px)" color=appearance.onTint
                 // the voice slot: the voice button, Stop while recording, the draft's Send; each liquid glass.
@@ -1955,19 +1987,22 @@ component Multiplexer
               dark=(viewport.prefersColorScheme == "dark"))
             // the chat's one player of voice messages: no box of its own; each bubble is its button.
             if voiceSrc != ""
-              audio voiceSrc id="voice-player" paused=voicePaused playbackRate=voiceSpeed preservesPitch=true timeupdate=voiceTimed
+              audio voiceSrc id="voice-player" paused=voicePaused currentTime=voiceFrom playbackRate=voiceSpeed preservesPitch=true timeupdate=voiceTimed
                 ended=voiceEnded pause=voiceStopped play=voiceStarted testId="voice-player"
             // a held message: the chat blurs, the bubble stays where it was, the reactions sit above it
             // and its actions under it, as Beeper and Messages show them.
             if held != ""
               column keycapture=menuKey position="absolute" inset=0 z-index=30 testId="message-menu"
+                -exact-exit-animation="menuOut 180ms ease-in both"
                 // the blur reaches past the screen's top and bottom edges too: under the status bar and the home indicator.
                 button press=letGo aria-label="Close" position="absolute" top=-120 left=0 right=0 bottom=-60 backgroundMaterial="thin" testId="close-menu"
+                  animation="menuDim 240ms ease-out both"
                 column position="absolute" left=12 right=12 gap=10 align-items=(heldOwn ? "flex-end" : "flex-start")
                   padding-left=(thread.group and not heldOwn ? 36 : 0)
                   top=max(76, min(heldY - 64, viewport.height - heldShown - min(heldMenuHeight, heldMenuRoom) - 120))
                   // Beeper's six, then "+" for every emoji.
                   row gap=2 padding=6 border-radius=28 backgroundMaterial="glass" testId="quick-reactions"
+                    transform-origin=(heldOwn ? "100% 100%" : "0% 100%") animation=menuPopMotion
                     for k in quickReactions key=k
                       // fixed as Beeper's, a little larger at the largest text sizes, so the bar fits the screen.
                       button appearance="none" press=react(k) min-width=44 min-height=44 border-radius=22 aria-label=k testId=`react-${k}`
@@ -2019,6 +2054,7 @@ component Multiplexer
                   else
                     // a bubble cut at the cap keeps round corners where it is cut.
                     column contextTarget=`message-${held}` contextMagnify=true width=heldWidth max-width="100%" max-height=heldCap overflow="hidden"
+                      animation=menuLiftMotion
                       border-radius=(heldHeight > heldCap ? 20 : 0)
                       padding-bottom=6.65
                       // a link with a card lifts its card, so the bubble keeps its shape under the finger.
@@ -2034,7 +2070,7 @@ component Multiplexer
                           Balloon(appearance=appearance, body=heldBody, outgoing=heldOwn, tail=heldTail, dimmed=false, identifier="held-bubble")
                   // the emoji sheet hides the actions, as Beeper's does: they would show through it.
                   if top(nav).name != "reactions"
-                    MessageActions(maxHeight=heldMenuRoom, canShare=heldCanShare, canForward=heldCanForward, canCopy=heldCanCopy, canEdit=heldCanEdit, canDelete=heldCanDelete,
+                    MessageActions(motion=menuPopMotion, origin=(heldOwn ? "100% 0%" : "0% 0%"), maxHeight=heldMenuRoom, canShare=heldCanShare, canForward=heldCanForward, canCopy=heldCanCopy, canEdit=heldCanEdit, canDelete=heldCanDelete,
                       canBookmark=(heldEvent != ""), bookmarked=heldBookmarked,
                       reply=startReply(held, heldName, heldBody), share=shareHeld, forward=forwardHeld, copy=copyHeld, canTranscribe=heldCanTranscribe, transcribe=transcribeHeld,
                       markUnread=markUnreadOpen, bookmark=toggleBookmarkHeld, edit=startEdit, delete=askDeleteMessage)
@@ -2124,16 +2160,16 @@ component RoomFace
         // an unread chat: a bold name and a count beside the preview; muted, a grey
         // count; with a mention, "@" and the accent. marked unread by hand: a dot.
         row gap=8 align-items="flex-start"
-          // an own message: its receipt in place of "You:", an outline check once sent, filled once seen.
+          // an own message: its receipt in place of "You:": one tick once sent, two once delivered
+          // (known while its chat is open), two in the accent once seen. The ticks stand before the
+          // preview, whose second line starts under its first (a paragraph holds no svg).
           // a word longer than the line (a link) breaks where it must, so the ellipsis ends it in its box.
-          text font="-exact-subheadline" color="-exact-secondary-label" line-clamp=2
-            min-height="2.6em" flex=1 min-width=0 overflow-wrap="break-word" testId=`room-preview-${r.id}`
+          row flex=1 min-width=0 gap="0.3em" align-items="baseline" font="-exact-subheadline"
             if r.lastIsOwn and r.lastStatus != "" and r.lastMessage != ""
-              image (r.lastStatus == "seen" ? "symbol:icon.seen" : "symbol:icon.sent") width="0.95em" height="0.95em"
-                vertical-align="-0.12em" color="-exact-secondary-label" aria-label=(r.lastStatus == "seen" ? "Seen" : "Sent")
-                testId=`receipt-${r.id}`
-              text " "
-            text (r.lastMessage != "" ? preview(r) : "")
+              Ticks(level=(r.lastStatus == "seen" ? 3 : (r.lastStatus == "delivered" ? 2 : 1)), size=0.95,
+                label=(r.lastStatus == "seen" ? "Seen" : (r.lastStatus == "delivered" ? "Delivered" : "Sent")), identifier=`receipt-${r.id}`)
+            text (r.lastMessage != "" ? preview(r) : "") font="-exact-subheadline" color="-exact-secondary-label" line-clamp=2
+              min-height="2.6em" flex=1 min-width=0 overflow-wrap="break-word" testId=`room-preview-${r.id}`
           if r.mentions > 0
             view flex-shrink=0 testId=`count-${r.id}`
               AccentBadge(appearance=appearance, label=`@ ${countText(max(r.unread, r.mentions))}`, muted=false)

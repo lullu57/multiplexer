@@ -1,5 +1,48 @@
 # Mux: tasks
 
+## Stack review (2026-11-18)
+
+- [x] Exercise delivery-store concurrency, account-scoped push cleanup, notification routing
+  with server ports, and 411-room inbox projection with out-of-order responses.
+- [x] Avoid rebuilding an open timeline for a single preview and repeating an inbox
+  refresh for every read receipt in one poll.
+- [ ] Measure first usable inbox on the physical phone after these review changes.
+- [ ] Verify background WhatsApp delivery and notification grouping on the physical phone.
+
+## Daily-use fixes stack (2026-11-18)
+
+- [x] Reply bar and quote keep a long link inside a card; a tap on a quote goes to the quoted
+  message. Drives: reply bar, quote light/dark, largest text, jump to the room's first message.
+  Live test `testAReplyQuotesItsMessageAndReactionsCount` passes with the quote's event id.
+- [x] Message menu opens and closes with motion (filmed frames, incoming and own, Reduce Motion).
+- [x] A send from three screens up scrolls to the end, then flies; a send at the end and a
+  Reduce Motion send from higher up also pass (filmed).
+- [x] Ticks for sent, delivered and seen in the chat and the inbox; `DeliveriesTests` 8 of 8,
+  `send-test-message.sh --delivered-last` for drives; a bridge's bot never counts as a reader.
+- [x] Old messages a bridge fills in show as one quiet notification per chat; unit tests for the
+  rule, the service fixture and the live push test (message time) pass; the push-capable build
+  with the extension compiles and installs on the Simulator.
+- [x] A tap or a drag on a voice message's waveform moves through it (a playhead, the bars and
+  the time follow the finger; the sound moves on the lift). Real-touch drives: tap, drag, drag
+  past the start, vertical scroll from the waveform, reply swipe beside it, long press.
+  Not driven: the recorded draft's waveform (a drive cannot record), VoiceOver.
+- [ ] Rami: connect the iPhone, then install the stack's build and check on the phone: a tap on
+  a notification opens its chat (app open, in the background, closed), opening a chat removes
+  its notifications, and a new bridged chat's old messages arrive quiet.
+- [x] `matrix.message_status_events` is on for the WhatsApp bridge (Rami's ok 2026-11-18;
+  `server/notes/install.md`). Still to see: two ticks on a real WhatsApp message on the phone.
+- [ ] The Instagram bridge's pinned image is gone from the registry, so the full playbook
+  install fails at its pull. Pin a tag that exists, then run the full install and the self-check.
+- [ ] Later, if wanted: read delivery reports for chats that are not open (the SDK gives them only
+  through a per-room subscription), and animate the held bubble's own move in the menu (needs
+  an Exact change).
+- [ ] Not from the framework: the Mac's disk had 3 to 9 GiB free during this work. Deleted stale
+  build caches only. `/private/tmp/talks` (20 GiB of video work) and 19 Simulator devices
+  (61 GiB) were left for Rami to decide.
+- [ ] A normal push through real APNs was not run again after the extension change (the news
+  path is unchanged code); run it with the phone check above.
+
+
 ## Links open in any installed app (2026-11-14, branch `fix/open-links-in-installed-apps`)
 
 - [x] Rami: not only Instagram; Google Maps, Google Photos, anything with an app. The site list

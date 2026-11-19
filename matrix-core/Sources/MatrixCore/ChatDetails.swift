@@ -88,7 +88,13 @@ final class MemberNames: @unchecked Sendable {
 /// A timeline's items as the chat's messages, oldest first. Each message carries the read
 /// receipts of others on it; a receipt on an event the chat does not show (a join, a new
 /// name) counts for the message before it, as the sdk moves one off a hidden event.
-func chatMessages(_ items: [TimelineItem], me: String, names: MemberNames) -> [Message] {
+/// A receipt that is a bridge's status event's own is no reading (`Deliveries.isReport`), and a
+/// bridge's service member (its bot) is never a reader: its events move its receipt, not a person's.
+func chatMessages(_ items: [TimelineItem], me: String, names: MemberNames, deliveries: Deliveries? = nil,
+                  serviceMembers: Set<String> = []) -> [Message] {
+    let isReading = { (user: String, receipt: Receipt) in
+        !serviceMembers.contains(user) && !(deliveries?.isReport(user, receipt.timestamp) ?? false)
+    }
     // the names the timeline's own events carry: a quote or a receipt of the same person uses them.
     for item in items {
         if let event = item.asEvent(), case .ready(let name?, _, _, _, _) = event.senderProfile { names.learn(event.sender, name) }
@@ -96,12 +102,11 @@ func chatMessages(_ items: [TimelineItem], me: String, names: MemberNames) -> [M
     var messages: [Message] = [], receipts: [[String: Receipt]] = []
     for item in items {
         guard let event = item.asEvent() else { continue }
-        if var message = Message(event, id: item.uniqueId().id, me: me, names: names) {
-            if case .eventId(let eventId) = event.eventOrTransactionId { message.eventId = eventId }
+        if let message = Message(event, id: item.uniqueId().id, me: me, names: names) {
             messages.append(message)
-            receipts.append(event.readReceipts.filter { $0.key != me && $0.key != event.sender })
+            receipts.append(event.readReceipts.filter { $0.key != me && $0.key != event.sender && isReading($0.key, $0.value) })
         } else if let last = messages.last {
-            let others = event.readReceipts.filter { $0.key != me && $0.key != last.sender }
+            let others = event.readReceipts.filter { $0.key != me && $0.key != last.sender && isReading($0.key, $0.value) }
             receipts[receipts.count - 1].merge(others) { kept, _ in kept }
         }
     }

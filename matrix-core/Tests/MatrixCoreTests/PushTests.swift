@@ -36,6 +36,9 @@ final class PushTests: XCTestCase {
             XCTAssertEqual(shown.senderAvatarUrl, senderProfile.avatarUrl)
             XCTAssertEqual(shown.chatName, name)
             XCTAssertEqual(shown.roomId, roomId)
+            // the message's own time, which tells a bridge's old message from news.
+            let age = Date().timeIntervalSince1970 - Double(shown.timestamp) / 1000
+            XCTAssertTrue(shown.timestamp > 0 && abs(age) < 300, "\(name): sent \(age) s ago")
             XCTAssertEqual(shown.eventId, eventId)
             XCTAssertEqual(shown.network, "matrix")
             // a room with two members, not marked direct, is a group; the server's rules make a

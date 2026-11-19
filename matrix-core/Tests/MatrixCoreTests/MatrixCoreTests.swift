@@ -557,6 +557,7 @@ final class MatrixCoreTests: XCTestCase {
         XCTAssertEqual(sent.reply?.isOwn, false)
         let reply = try await message(reader, roomId, within: 15) { $0.body == answer && $0.reply?.body == question }
         XCTAssertEqual(reply.reply?.isOwn, true, "the quoted message is the reader's own")
+        XCTAssertTrue(reply.reply?.eventId.hasPrefix("$") ?? false, "the quote names its message's event, so a tap can go to it")
         XCTAssertFalse(reply.reply?.senderName.isEmpty ?? true)
         XCTAssertFalse(reply.isEdited)
         let liked = try await message(reader, roomId, within: 15) { $0.body == question && !$0.reactions.isEmpty }

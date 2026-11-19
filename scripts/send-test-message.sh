@@ -11,6 +11,9 @@
 #   ogg opus, its length, a waveform of 64 values from 0 to 100, and the voice mark
 #   send-test-message.sh --delete-last: deletes the sender's newest message in the room for everyone
 #   send-test-message.sh --read: the sender reads the room: a read receipt on its newest message
+#   send-test-message.sh --delivered-last: the sender reports the other user's newest message as
+#   delivered to itself, as a whatsapp bridge does: a com.beeper.message_send_status event
+#   (status SUCCESS, delivered_to_users: the sender, an m.reference to that message)
 #   SENDER=@test2:ramimaalouf.com ROOM="Multiplexer two-person test" (the defaults)
 #   REPLY_TO=<event id> or REPLY_TO=first: the text answers that message, or the room's first
 #   text message (older than what a chat loads when it opens)
@@ -18,10 +21,12 @@
 #   HTML=<html>: the text carries that html body too (format org.matrix.custom.html), as a bridge's
 #   formatted message does, its plain body keeping the bridge's marks
 set -euo pipefail
-usage="usage: send-test-message.sh <text> | --image <file> [caption] | --video <file> [caption] | --sticker <file> | --voice <file> | --delete-last | --read"
-image=""; video=""; sticker=""; voice=""; caption=""; deletelast=""; readlast=""
+usage="usage: send-test-message.sh <text> | --image <file> [caption] | --video <file> [caption] | --sticker <file> | --voice <file> | --delete-last | --read | --delivered-last"
+image=""; video=""; sticker=""; voice=""; caption=""; deletelast=""; readlast=""; deliveredlast=""
 if [ "${1:-}" = "--read" ]; then
   readlast=1
+elif [ "${1:-}" = "--delivered-last" ]; then
+  deliveredlast=1
 elif [ "${1:-}" = "--delete-last" ]; then
   deletelast=1
 elif [ "${1:-}" = "--image" ]; then
@@ -62,6 +67,17 @@ if [ -n "$readlast" ]; then
   newenc="$(jq -rn --arg r "$newest" '$r|@uri')"
   curl -sf -X POST "$base/client/v3/rooms/$room/receipt/m.read/$newenc" -H "$auth" -H 'Content-Type: application/json' -d '{}' >/dev/null
   echo "read $newest as $sender"
+  exit 0
+fi
+
+if [ -n "$deliveredlast" ]; then
+  last="$(curl -sf "$base/client/v3/rooms/$room/messages?dir=b&limit=50" -H "$auth" \
+    | jq -r --arg me "$sender" '[.chunk[] | select(.sender != $me and (.type == "m.room.message" or .type == "m.sticker") and (.content | length) > 0)][0].event_id // empty')"
+  [ -n "$last" ] || { echo "no message from another user in the last 50 events of $roomname" >&2; exit 1; }
+  body="$(jq -n --arg id "$last" --arg me "$sender" \
+    '{status:"SUCCESS",network:"",delivered_to_users:[$me],"m.relates_to":{rel_type:"m.reference",event_id:$id}}')"
+  curl -sf -X PUT "$base/client/v3/rooms/$room/send/com.beeper.message_send_status/multiplexer-$(uuidgen)" -H "$auth" \
+    -H 'Content-Type: application/json' --data-binary @- <<<"$body" | jq -r '"reported '"$last"' delivered with " + .event_id'
   exit 0
 fi
 
